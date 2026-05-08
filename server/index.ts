@@ -277,8 +277,9 @@ app.get("/auth/callback", async (req, res) => {
 
 app.get("/auth/logout", (req, res) => {
   req.session = null;
-  const frontend = PUBLIC_APP_ORIGIN || `http://127.0.0.1:${PORT}`;
-  res.redirect(frontend || "/");
+  const base = String(PUBLIC_APP_ORIGIN || "").trim().replace(/\/$/, "");
+  const target = base ? `${base}/` : "/";
+  res.redirect(302, target);
 });
 
 async function guard(req: express.Request, res: express.Response, next: express.NextFunction) {
