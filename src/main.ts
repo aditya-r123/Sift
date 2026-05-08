@@ -76,10 +76,13 @@ function renderProfile(user: SpotifyUser) {
   const img = user.images?.[0]?.url;
   const name = user.display_name || user.id || "you";
   el.innerHTML = `
-    <p class="muted" style="margin:0 0 0.5rem">Signed in</p>
-    <div style="display:flex;align-items:center;gap:0.75rem">
-      ${img ? `<img alt="" src="${escapeHtml(img)}" width="48" height="48" style="border-radius:8px;border:1px solid var(--border)"/>` : ""}
-      <div><strong>${escapeHtml(name)}</strong>${user.country ? `<br/><span class="muted">${escapeHtml(user.country)}</span>` : ""}</div>
+    <p class="muted profile-label">Signed in</p>
+    <div class="profile-row">
+      ${img ? `<img alt="" class="profile-avatar" src="${escapeHtml(img)}" width="48" height="48" />` : ""}
+      <div class="profile-meta">
+        <strong class="profile-name">${escapeHtml(name)}</strong>
+        ${user.country ? `<span class="muted profile-country">${escapeHtml(user.country)}</span>` : ""}
+      </div>
     </div>
   `;
 }
@@ -196,14 +199,18 @@ type RecentlyPlayed = { items?: RecentRow[] };
 
 async function loadAuthenticatedUI() {
   const logoutBtn = qs("#btn-logout");
+  const connectLink = qs("#link-spotify-connect");
+  const statsPanel = qs("#stats-panel");
   const artistRange = qs("#artist-range") as HTMLSelectElement | null;
   const trackRange = qs("#track-range") as HTMLSelectElement | null;
   if (!logoutBtn || !artistRange || !trackRange) return;
-
   const artistSelect = artistRange;
   const trackSelect = trackRange;
 
+  if (connectLink) connectLink.hidden = true;
   logoutBtn.hidden = false;
+  if (statsPanel) statsPanel.hidden = false;
+
   const me = (await fetchJson("/api/me")) as { user?: SpotifyUser };
   if (me.user) renderProfile(me.user);
 
@@ -280,7 +287,11 @@ async function bootstrap() {
 
   const profile = qs("#profile");
   if (profile) profile.hidden = true;
+  const statsPanel = qs("#stats-panel");
+  if (statsPanel) statsPanel.hidden = true;
   if (logoutBtn) logoutBtn.hidden = true;
+  const connectLink = qs("#link-spotify-connect");
+  if (connectLink) connectLink.hidden = false;
 }
 
 bootstrap().catch((e) => showError(String(e instanceof Error ? e.message : e)));

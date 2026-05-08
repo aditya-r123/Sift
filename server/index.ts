@@ -1,9 +1,8 @@
-import "dotenv/config";
-
 import crypto from "node:crypto";
 
 import { existsSync } from "node:fs";
 import cookieSession from "cookie-session";
+import dotenv from "dotenv";
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +15,10 @@ interface HttpError extends Error {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, "..");
+
+/** Load `.env` from repo root so Spotify vars work even when `cwd` is not the project folder. */
+dotenv.config({ path: path.join(repoRoot, ".env") });
+dotenv.config();
 
 /** Vite emits `public/`. Locally this is `{repoRoot}/public`; bundled on Vercel, `cwd`/`public` is typical. */
 function resolveWebRoot(): string {
