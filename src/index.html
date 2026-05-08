@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spotify listening stats</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <header class="header">
+        <h1>Spotify listening stats</h1>
+
+        <div class="actions" id="actions">
+          <a class="btn primary" href="/auth/login">Connect Spotify</a>
+          <button type="button" class="btn" id="btn-logout" hidden>Sign out</button>
+        </div>
+        <p class="banner error" id="error-banner" hidden></p>
+        <section class="card" id="profile" hidden></section>
+      </header>
+
+      <section class="grid">
+        <article class="card">
+          <h2>Top artists</h2>
+          <select id="artist-range" aria-label="Top artists timeframe">
+            <option value="short_term">Last ~4 weeks</option>
+            <option value="medium_term" selected>Last ~6 months</option>
+            <option value="long_term">Years</option>
+          </select>
+          <ol id="top-artists" class="list"></ol>
+          <p class="muted empty" id="artists-empty">Connect Spotify to load favorites.</p>
+        </article>
+        <article class="card">
+          <h2>Top tracks</h2>
+          <p class="muted small mb-08">Tap a track for RapidAPI extended features (needs <code>RAPIDAPI_KEY</code>).</p>
+          <select id="track-range" aria-label="Top tracks timeframe">
+            <option value="short_term">Last ~4 weeks</option>
+            <option value="medium_term" selected>Last ~6 months</option>
+            <option value="long_term">Years</option>
+          </select>
+          <ul id="top-tracks" class="list flat list-tracks"></ul>
+          <p class="muted empty" id="tracks-empty">Connect Spotify to load favorites.</p>
+        </article>
+        <article class="card span-2">
+          <h2>Recently played</h2>
+          <ul id="recent" class="list flat list-tracks"></ul>
+          <p class="muted empty" id="recent-empty">Connect Spotify to see history.</p>
+        </article>
+      </section>
+    </main>
+
+    <dialog id="track-insights" class="insights-modal">
+      <form method="dialog" class="insights-form">
+        <div class="insights-head">
+          <h2 id="insights-title">Track details</h2>
+          <button type="submit" class="btn" value="" aria-label="Close">✕</button>
+        </div>
+        <p class="muted small" id="insights-subtitle" hidden></p>
+        <div id="insights-body" class="insights-body">
+          <p class="muted">Loading…</p>
+        </div>
+        <p class="muted small" id="insights-foot" hidden></p>
+      </form>
+    </dialog>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
