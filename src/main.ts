@@ -177,6 +177,55 @@ async function openTrackInsights(trackId: string, title: string) {
   }
 }
 
+function bindTabs() {
+  const tablist = document.querySelector('[role="tablist"]');
+  if (!tablist) return;
+  const tabs = [...tablist.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+
+  function panelForTab(tab: HTMLButtonElement): HTMLElement | null {
+    const id = tab.getAttribute("aria-controls");
+    return id ? document.getElementById(id) : null;
+  }
+
+  function selectTab(active: HTMLButtonElement) {
+    for (const tab of tabs) {
+      const on = tab === active;
+      tab.setAttribute("aria-selected", String(on));
+      tab.classList.toggle("is-active", on);
+      tab.tabIndex = on ? 0 : -1;
+      const panel = panelForTab(tab);
+      if (panel) {
+        panel.hidden = !on;
+        panel.classList.toggle("is-active", on);
+      }
+    }
+  }
+
+  tablist.addEventListener("click", (ev) => {
+    const tab = (ev.target as HTMLElement).closest<HTMLButtonElement>('[role="tab"]');
+    if (!tab || !tablist.contains(tab)) return;
+    selectTab(tab);
+  });
+
+  tablist.addEventListener("keydown", (ev) => {
+    if (!(ev instanceof KeyboardEvent)) return;
+    const current = tabs.find((t) => t.getAttribute("aria-selected") === "true");
+    if (!current) return;
+    const i = tabs.indexOf(current);
+    let next = -1;
+    if (ev.key === "ArrowRight" || ev.key === "ArrowDown") next = (i + 1) % tabs.length;
+    else if (ev.key === "ArrowLeft" || ev.key === "ArrowUp") next = (i - 1 + tabs.length) % tabs.length;
+    if (next >= 0) {
+      ev.preventDefault();
+      selectTab(tabs[next]!);
+      tabs[next]?.focus();
+    }
+  });
+
+  const initial = tabs.find((t) => t.getAttribute("aria-selected") === "true") ?? tabs[0];
+  if (initial) selectTab(initial);
+}
+
 function bindTrackInsightClicks() {
   document.body.addEventListener("click", (ev) => {
     const t = ev.target;
@@ -209,6 +258,8 @@ async function loadAuthenticatedUI() {
 
   if (connectLink) connectLink.hidden = true;
   logoutBtn.hidden = false;
+  const profileGate = qs("#profile-gate");
+  if (profileGate) profileGate.hidden = true;
   if (statsPanel) statsPanel.hidden = false;
 
   const me = (await fetchJson("/api/me")) as { user?: SpotifyUser };
@@ -255,6 +306,7 @@ async function loadAuthenticatedUI() {
 }
 
 async function bootstrap() {
+  bindTabs();
   bindTrackInsightClicks();
 
   const hash = (location.hash || "").replace(/^#/, "");
@@ -274,6 +326,7 @@ async function bootstrap() {
     const status = (await fetchJson("/api/auth-status")) as { authenticated?: boolean };
     if (status.authenticated) {
       await loadAuthenticatedUI();
+      qs("#tab-profile-btn")?.click();
       return;
     }
   } catch (e) {
@@ -287,6 +340,8 @@ async function bootstrap() {
 
   const profile = qs("#profile");
   if (profile) profile.hidden = true;
+  const profileGate = qs("#profile-gate");
+  if (profileGate) profileGate.hidden = false;
   const statsPanel = qs("#stats-panel");
   if (statsPanel) statsPanel.hidden = true;
   if (logoutBtn) logoutBtn.hidden = true;

@@ -3,49 +3,113 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Spotify listening stats</title>
+    <title>Sift</title>
+    <link rel="icon" type="image/png" href="./logo.png" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="top-bar">
-      <a class="btn btn-spotify btn-compact" id="link-spotify-connect" href="/auth/login">Connect Spotify</a>
-      <button type="button" class="btn btn-compact" id="btn-logout" hidden>Sign out</button>
+      <a href="/" class="brand">
+        <img src="./logo.png" alt="" class="brand__logo" width="40" height="40" decoding="async" />
+        <span class="brand__name">Sift</span>
+      </a>
+      <div class="top-bar__actions">
+        <a class="btn btn-spotify btn-compact" id="link-spotify-connect" href="/auth/login">Connect Spotify</a>
+        <button type="button" class="btn btn-compact" id="btn-logout" hidden>Sign out</button>
+      </div>
     </div>
+
+    <nav class="nav-tabs" aria-label="Home sections">
+      <div class="nav-tabs__inner">
+        <div class="tabs tabs--top-row" role="tablist">
+          <button
+            type="button"
+            class="tab"
+            role="tab"
+            id="tab-discover-btn"
+            aria-selected="true"
+            aria-controls="panel-discover"
+          >
+            Discover
+          </button>
+          <button type="button" class="tab" role="tab" id="tab-explore-btn" aria-selected="false" aria-controls="panel-explore">
+            Explore
+          </button>
+          <button type="button" class="tab" role="tab" id="tab-friends-btn" aria-selected="false" aria-controls="panel-friends">
+            Friends
+          </button>
+          <button type="button" class="tab" role="tab" id="tab-profile-btn" aria-selected="false" aria-controls="panel-profile">
+            View Profile
+          </button>
+        </div>
+      </div>
+    </nav>
 
     <main class="layout">
       <p class="banner error" id="error-banner" hidden></p>
 
-      <section class="card profile-panel" id="profile" hidden></section>
+      <div class="card home-shell">
+        <div class="tab-panels">
+          <div class="tab-panel is-active" role="tabpanel" id="panel-discover" aria-labelledby="tab-discover-btn">
+            <h2 class="panel-heading">Discover</h2>
+            <p class="muted">
+              Personalized picks, new releases, and recommendations will show up here.
+            </p>
+          </div>
 
-      <div id="stats-panel" class="stats-panel" hidden>
-        <section class="grid">
-          <article class="card">
-            <h2>Top artists</h2>
-            <select id="artist-range" aria-label="Top artists timeframe">
-              <option value="short_term">Last ~4 weeks</option>
-              <option value="medium_term" selected>Last ~6 months</option>
-              <option value="long_term">Years</option>
-            </select>
-            <ol id="top-artists" class="list"></ol>
-            <p class="muted empty" id="artists-empty">No artists yet.</p>
-          </article>
-          <article class="card">
-            <h2>Top tracks</h2>
-            <p class="muted small mb-08">Tap a track for RapidAPI extended features (needs <code>RAPIDAPI_KEY</code>).</p>
-            <select id="track-range" aria-label="Top tracks timeframe">
-              <option value="short_term">Last ~4 weeks</option>
-              <option value="medium_term" selected>Last ~6 months</option>
-              <option value="long_term">Years</option>
-            </select>
-            <ul id="top-tracks" class="list flat list-tracks"></ul>
-            <p class="muted empty" id="tracks-empty">No tracks yet.</p>
-          </article>
-          <article class="card span-2">
-            <h2>Recently played</h2>
-            <ul id="recent" class="list flat list-tracks"></ul>
-            <p class="muted empty" id="recent-empty">No recent plays yet.</p>
-          </article>
-        </section>
+          <div class="tab-panel" role="tabpanel" id="panel-explore" aria-labelledby="tab-explore-btn" hidden>
+            <h2 class="panel-heading">Explore</h2>
+            <p class="muted">
+              Browse moods, genres, and new releases. This space is ready for playlists, charts, and recommendations.
+            </p>
+          </div>
+
+          <div class="tab-panel" role="tabpanel" id="panel-friends" aria-labelledby="tab-friends-btn" hidden>
+            <h2 class="panel-heading">Friends</h2>
+            <p class="muted">See what friends are listening to, compare tastes, and share discoveries — coming soon.</p>
+          </div>
+
+          <div class="tab-panel" role="tabpanel" id="panel-profile" aria-labelledby="tab-profile-btn" hidden>
+            <h2 class="panel-heading">Profile</h2>
+            <div id="profile-gate" class="tab-gate">
+              <p class="muted">
+                Connect Spotify to see your profile, top artists, tracks, and recent plays.
+              </p>
+              <a class="btn btn-spotify btn-compact" href="/auth/login">Connect Spotify</a>
+            </div>
+            <section class="card profile-panel" id="profile" hidden></section>
+            <div id="stats-panel" class="stats-panel" hidden>
+              <section class="grid">
+                <article class="card">
+                  <h2>Top artists</h2>
+                  <select id="artist-range" aria-label="Top artists timeframe">
+                    <option value="short_term">Last ~4 weeks</option>
+                    <option value="medium_term" selected>Last ~6 months</option>
+                    <option value="long_term">Years</option>
+                  </select>
+                  <ol id="top-artists" class="list"></ol>
+                  <p class="muted empty" id="artists-empty">No artists yet.</p>
+                </article>
+                <article class="card">
+                  <h2>Top tracks</h2>
+                  <p class="muted small mb-08">Tap a track for RapidAPI extended features (needs <code>RAPIDAPI_KEY</code>).</p>
+                  <select id="track-range" aria-label="Top tracks timeframe">
+                    <option value="short_term">Last ~4 weeks</option>
+                    <option value="medium_term" selected>Last ~6 months</option>
+                    <option value="long_term">Years</option>
+                  </select>
+                  <ul id="top-tracks" class="list flat list-tracks"></ul>
+                  <p class="muted empty" id="tracks-empty">No tracks yet.</p>
+                </article>
+                <article class="card span-2">
+                  <h2>Recently played</h2>
+                  <ul id="recent" class="list flat list-tracks"></ul>
+                  <p class="muted empty" id="recent-empty">No recent plays yet.</p>
+                </article>
+              </section>
+            </div>
+          </div>
+        </div>
       </div>
     </main>
 
