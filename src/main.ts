@@ -1,5 +1,31 @@
+import { createElement, type ComponentType } from "react";
+import { createRoot } from "react-dom/client";
+
 //setting up vercel
 const apiBase = "";
+
+function normalizePath(pathname: string) {
+  return pathname.replace(/\/+$/, "") || "/";
+}
+
+async function renderPageRoute(): Promise<boolean> {
+  const route = normalizePath(window.location.pathname);
+  let Page: ComponentType | undefined;
+
+  if (route === "/discover") {
+    Page = (await import("./pages/Discover")).DiscoverPage;
+  } else if (route === "/explore") {
+    Page = (await import("./pages/Explore")).ExplorePage;
+  }
+
+  if (!Page) return false;
+
+  document.body.innerHTML = '<div id="app"></div>';
+  const root = document.getElementById("app");
+  if (!root) return false;
+  createRoot(root).render(createElement(Page));
+  return true;
+}
 
 function qs(sel: string): HTMLElement | null {
   return document.querySelector(sel);
@@ -248,6 +274,8 @@ async function loadAuthenticatedUI() {
 }
 
 async function bootstrap() {
+  if (await renderPageRoute()) return;
+
   bindTrackInsightClicks();
 
   const hash = (location.hash || "").replace(/^#/, "");
