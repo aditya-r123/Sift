@@ -1,3 +1,4 @@
+//setting up vercel
 const apiBase = "";
 
 function qs(sel: string): HTMLElement | null {
