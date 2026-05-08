@@ -16,6 +16,8 @@ async function renderPageRoute(): Promise<boolean> {
     Page = (await import("./pages/Discover")).DiscoverPage;
   } else if (route === "/explore") {
     Page = (await import("./pages/Explore")).ExplorePage;
+  } else if (route === "/friends") {
+    Page = (await import("./pages/Friends")).ProfilePage;
   }
 
   if (!Page) return false;
