@@ -66,7 +66,6 @@ type SpotifyUser = {
   images?: SpotifyImage[];
   display_name?: string;
   id?: string;
-  country?: string;
 };
 
 function renderProfile(user: SpotifyUser) {
@@ -76,12 +75,10 @@ function renderProfile(user: SpotifyUser) {
   const img = user.images?.[0]?.url;
   const name = user.display_name || user.id || "you";
   el.innerHTML = `
-    <p class="muted profile-label">Signed in</p>
     <div class="profile-row">
       ${img ? `<img alt="" class="profile-avatar" src="${escapeHtml(img)}" width="48" height="48" />` : ""}
       <div class="profile-meta">
         <strong class="profile-name">${escapeHtml(name)}</strong>
-        ${user.country ? `<span class="muted profile-country">${escapeHtml(user.country)}</span>` : ""}
       </div>
     </div>
   `;
@@ -246,6 +243,37 @@ type PaginatedTracks = { items?: SpotifyTrack[] };
 type RecentRow = { track?: SpotifyTrack; played_at?: string };
 type RecentlyPlayed = { items?: RecentRow[] };
 
+function applyGuestUi() {
+  if (location.hash) {
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+
+  const profile = qs("#profile");
+  if (profile) {
+    profile.hidden = true;
+    profile.innerHTML = "";
+  }
+
+  const profileGate = qs("#profile-gate");
+  if (profileGate) profileGate.hidden = false;
+
+  const statsPanel = qs("#stats-panel");
+  if (statsPanel) statsPanel.hidden = true;
+
+  renderList("#top-artists", "", "#artists-empty");
+  renderList("#top-tracks", "", "#tracks-empty");
+  renderList("#recent", "", "#recent-empty");
+
+  const logoutBtn = qs("#btn-logout");
+  if (logoutBtn) logoutBtn.hidden = true;
+
+  const connectLink = qs("#link-spotify-connect");
+  if (connectLink) connectLink.hidden = false;
+
+  showError(null);
+  qs("#tab-discover-btn")?.click();
+}
+
 async function loadAuthenticatedUI() {
   const logoutBtn = qs("#btn-logout");
   const connectLink = qs("#link-spotify-connect");
@@ -338,15 +366,7 @@ async function bootstrap() {
     return;
   }
 
-  const profile = qs("#profile");
-  if (profile) profile.hidden = true;
-  const profileGate = qs("#profile-gate");
-  if (profileGate) profileGate.hidden = false;
-  const statsPanel = qs("#stats-panel");
-  if (statsPanel) statsPanel.hidden = true;
-  if (logoutBtn) logoutBtn.hidden = true;
-  const connectLink = qs("#link-spotify-connect");
-  if (connectLink) connectLink.hidden = false;
+  applyGuestUi();
 }
 
 bootstrap().catch((e) => showError(String(e instanceof Error ? e.message : e)));

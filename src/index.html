@@ -14,7 +14,16 @@
         <span class="brand__name">Sift</span>
       </a>
       <div class="top-bar__actions">
-        <a class="btn btn-spotify btn-compact" id="link-spotify-connect" href="/auth/login">Connect Spotify</a>
+        <a class="btn btn-spotify btn-compact" id="link-spotify-connect" href="/auth/login"
+          ><span class="btn-spotify__inner"
+            ><svg class="btn-spotify__mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"
+              ><path
+                fill="currentColor"
+                d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.381.099-.78-.12-.899-.48-.12-.401.12-.78.48-.899 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.361 1.02zm1.44-3.3c-.301.42-.841.6-1.261.42-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.42 1.56-.299.421-1.02.599-1.559.3z"
+              /></svg
+            ><span>Connect Spotify</span></span
+          ></a
+        >
         <button type="button" class="btn btn-compact" id="btn-logout" hidden>Sign out</button>
       </div>
     </div>
@@ -30,16 +39,83 @@
             aria-selected="true"
             aria-controls="panel-discover"
           >
-            Discover
+            <span class="tab__inner">
+              <svg
+                class="tab__icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+              </svg>
+              <span class="tab__label">Discover</span>
+            </span>
           </button>
           <button type="button" class="tab" role="tab" id="tab-explore-btn" aria-selected="false" aria-controls="panel-explore">
-            Explore
+            <span class="tab__inner">
+              <svg
+                class="tab__icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
+                <line x1="8" y1="2" x2="8" y2="18" />
+                <line x1="16" y1="6" x2="16" y2="22" />
+              </svg>
+              <span class="tab__label">Explore</span>
+            </span>
           </button>
           <button type="button" class="tab" role="tab" id="tab-friends-btn" aria-selected="false" aria-controls="panel-friends">
-            Friends
+            <span class="tab__inner">
+              <svg
+                class="tab__icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              <span class="tab__label">Friends</span>
+            </span>
           </button>
           <button type="button" class="tab" role="tab" id="tab-profile-btn" aria-selected="false" aria-controls="panel-profile">
-            View Profile
+            <span class="tab__inner">
+              <svg
+                class="tab__icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+              <span class="tab__label">View Profile</span>
+            </span>
           </button>
         </div>
       </div>
@@ -75,7 +151,16 @@
               <p class="muted">
                 Connect Spotify to see your profile, top artists, tracks, and recent plays.
               </p>
-              <a class="btn btn-spotify btn-compact" href="/auth/login">Connect Spotify</a>
+              <a class="btn btn-spotify btn-compact" href="/auth/login"
+                ><span class="btn-spotify__inner"
+                  ><svg class="btn-spotify__mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"
+                    ><path
+                      fill="currentColor"
+                      d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.381.099-.78-.12-.899-.48-.12-.401.12-.78.48-.899 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.361 1.02zm1.44-3.3c-.301.42-.841.6-1.261.42-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.42 1.56-.299.421-1.02.599-1.559.3z"
+                    /></svg
+                  ><span>Connect Spotify</span></span
+                ></a
+              >
             </div>
             <section class="card profile-panel" id="profile" hidden></section>
             <div id="stats-panel" class="stats-panel" hidden>
