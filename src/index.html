@@ -9,11 +9,12 @@
   </head>
   <body>
     <div class="top-bar">
-      <a href="/" class="brand">
-        <img src="./logo.png" alt="" class="brand__logo" width="40" height="40" decoding="async" />
-        <span class="brand__name">Sift</span>
-      </a>
-      <div class="top-bar__actions">
+      <div class="top-bar__inner">
+        <a href="/" class="brand">
+          <img src="./logo.png" alt="" class="brand__logo" width="40" height="40" decoding="async" />
+          <span class="brand__name">Sift</span>
+        </a>
+        <div class="top-bar__actions">
         <a class="btn btn-spotify btn-compact" id="link-spotify-connect" href="/auth/login"
           ><span class="btn-spotify__inner"
             ><svg class="btn-spotify__mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"
@@ -25,6 +26,7 @@
           ></a
         >
         <button type="button" class="btn btn-compact" id="btn-logout" hidden>Sign out</button>
+      </div>
       </div>
     </div>
 
@@ -129,20 +131,20 @@
           <div class="tab-panel is-active" role="tabpanel" id="panel-discover" aria-labelledby="tab-discover-btn">
             <h2 class="panel-heading">Discover</h2>
             <p class="muted">
-              Personalized picks, new releases, and recommendations will show up here.
+              Swipe on personalized reccomendations, based on your own or your friends' listening habits
             </p>
           </div>
 
           <div class="tab-panel" role="tabpanel" id="panel-explore" aria-labelledby="tab-explore-btn" hidden>
             <h2 class="panel-heading">Explore</h2>
             <p class="muted">
-              Browse moods, genres, and new releases. This space is ready for playlists, charts, and recommendations.
+              Swipe on songs and artists to find new kinds of music.
             </p>
           </div>
 
           <div class="tab-panel" role="tabpanel" id="panel-friends" aria-labelledby="tab-friends-btn" hidden>
             <h2 class="panel-heading">Friends</h2>
-            <p class="muted">See what friends are listening to, compare tastes, and share discoveries — coming soon.</p>
+            <p class="muted">Add new friends, view their profile, and get reccomended songs based on their listening habits.</p>
           </div>
 
           <div class="tab-panel" role="tabpanel" id="panel-profile" aria-labelledby="tab-profile-btn" hidden>
@@ -167,28 +169,19 @@
               <section class="grid">
                 <article class="card">
                   <h2>Top artists</h2>
-                  <select id="artist-range" aria-label="Top artists timeframe">
-                    <option value="short_term">Last ~4 weeks</option>
-                    <option value="medium_term" selected>Last ~6 months</option>
-                    <option value="long_term">Years</option>
-                  </select>
-                  <ol id="top-artists" class="list"></ol>
+                  <p class="muted small mb-08">Last ~4 weeks</p>
+                  <ul id="top-artists" class="list flat list-media"></ul>
                   <p class="muted empty" id="artists-empty">No artists yet.</p>
                 </article>
                 <article class="card">
                   <h2>Top tracks</h2>
-                  <p class="muted small mb-08">Tap a track for RapidAPI extended features (needs <code>RAPIDAPI_KEY</code>).</p>
-                  <select id="track-range" aria-label="Top tracks timeframe">
-                    <option value="short_term">Last ~4 weeks</option>
-                    <option value="medium_term" selected>Last ~6 months</option>
-                    <option value="long_term">Years</option>
-                  </select>
-                  <ul id="top-tracks" class="list flat list-tracks"></ul>
+                  <p class="muted small mb-08">Last ~4 weeks</p>
+                  <ul id="top-tracks" class="list flat list-tracks list-media"></ul>
                   <p class="muted empty" id="tracks-empty">No tracks yet.</p>
                 </article>
                 <article class="card span-2">
                   <h2>Recently played</h2>
-                  <ul id="recent" class="list flat list-tracks"></ul>
+                  <ul id="recent" class="list flat list-tracks list-media"></ul>
                   <p class="muted empty" id="recent-empty">No recent plays yet.</p>
                 </article>
               </section>
