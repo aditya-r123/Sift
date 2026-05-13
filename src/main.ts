@@ -1,4 +1,8 @@
-//setting up vercel
+// Initialize Vercel Web Analytics
+import { inject } from '@vercel/analytics';
+
+inject();
+
 const apiBase = "";
 
 function qs(sel: string): HTMLElement | null {
