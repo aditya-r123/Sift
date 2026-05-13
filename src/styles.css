@@ -37,6 +37,86 @@
 }
 
 @layer components {
+  .login-page[hidden],
+  #app-shell[hidden] {
+    display: none !important;
+  }
+
+  .login-page {
+    min-height: 100vh;
+    padding: 1.5rem 1rem 3rem;
+    display: grid;
+    align-items: center;
+  }
+
+  .login-card {
+    width: min(100%, 28rem);
+    margin: 0 auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.15rem;
+    box-shadow: var(--shadow-card);
+  }
+
+  .login-brand {
+    margin-bottom: 1.5rem;
+  }
+
+  .login-copy {
+    margin-bottom: 1rem;
+  }
+
+  .login-copy h1 {
+    margin: 0 0 0.45rem;
+    font-size: 1.55rem;
+    line-height: 1.15;
+  }
+
+  .eyebrow {
+    color: #1ed760;
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    margin: 0 0 0.45rem;
+    text-transform: uppercase;
+  }
+
+  .login-actions {
+    display: grid;
+    gap: 0.65rem;
+    margin-top: 1rem;
+  }
+
+  .login-action {
+    width: 100%;
+    min-height: 2.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .login-note {
+    margin: 1rem 0 0;
+    font-size: 0.78rem;
+  }
+
+  .global-error {
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    z-index: 20;
+    width: min(calc(100vw - 2rem), 44rem);
+    transform: translateX(-50%);
+    margin: 0;
+    background: rgb(42 14 24 / 0.96);
+    border: 1px solid rgb(240 136 154 / 0.42);
+    border-radius: 12px;
+    padding: 0.7rem 0.85rem;
+    box-shadow: var(--shadow-card);
+  }
+
   .layout {
     max-width: 960px;
     margin: 0 auto;
