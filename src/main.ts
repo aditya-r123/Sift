@@ -17,6 +17,20 @@ function showError(msg: string | null | undefined) {
   el.textContent = msg;
 }
 
+function showLoginPage() {
+  const login = qs("#login-page");
+  const app = qs("#app-shell");
+  if (login) login.hidden = false;
+  if (app) app.hidden = true;
+}
+
+function showAppShell() {
+  const login = qs("#login-page");
+  const app = qs("#app-shell");
+  if (login) login.hidden = true;
+  if (app) app.hidden = false;
+}
+
 async function fetchJson(url: string): Promise<Record<string, unknown>> {
   const res = await fetch(`${apiBase}${url}`, { credentials: "include" });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -318,6 +332,8 @@ type RecentRow = { track?: SpotifyTrack; played_at?: string };
 type RecentlyPlayed = { items?: RecentRow[] };
 
 function applyGuestUi() {
+  showLoginPage();
+
   if (location.hash) {
     history.replaceState(null, "", location.pathname + location.search);
   }
@@ -344,7 +360,6 @@ function applyGuestUi() {
   const connectLink = qs("#link-spotify-connect");
   if (connectLink) connectLink.hidden = false;
 
-  showError(null);
   qs("#tab-discover-btn")?.click();
 }
 
@@ -356,6 +371,7 @@ async function loadAuthenticatedUI() {
   const statsPanel = qs("#stats-panel");
   if (!logoutBtn) return;
 
+  showAppShell();
   if (connectLink) connectLink.hidden = true;
   logoutBtn.hidden = false;
   const profileGate = qs("#profile-gate");
