@@ -7,6 +7,12 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  createEmailUser,
+  findOrCreateGoogleUser,
+  verifyEmailUser,
+} from "./users.js";
+
 interface HttpError extends Error {
   status?: number;
   body?: unknown;
@@ -36,6 +42,9 @@ const SPOTIFY_CLIENT_SECRET = String(process.env.SPOTIFY_CLIENT_SECRET ?? "").tr
 const SPOTIFY_REDIRECT_URI = String(process.env.SPOTIFY_REDIRECT_URI ?? "").trim();
 
 const SESSION_SECRET = String(process.env.SESSION_SECRET ?? "").trim();
+const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID ?? "").trim();
+const GOOGLE_CLIENT_SECRET = String(process.env.GOOGLE_CLIENT_SECRET ?? "").trim();
+const GOOGLE_REDIRECT_URI = String(process.env.GOOGLE_REDIRECT_URI ?? "").trim();
 const PUBLIC_APP_ORIGIN = String(process.env.PUBLIC_APP_ORIGIN ?? "").trim();
 const NODE_ENV = process.env.NODE_ENV;
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
@@ -54,11 +63,13 @@ for (const [val, key] of [
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 
+app.use(express.json({ limit: "32kb" }));
+
 app.set("trust proxy", 1);
 
 app.use(
   cookieSession({
-    name: "spotify_sess",
+    name: "sift_sess",
     keys: SESSION_SECRET ? [SESSION_SECRET] : ["dev-secret-change-me"],
     maxAge: 7 * 24 * 60 * 60 * 1000,
     sameSite: "lax",
@@ -68,6 +79,44 @@ app.use(
 );
 
 type SessionShape = NonNullable<express.Request["session"]>;
+
+function appOrigin(): string {
+  return PUBLIC_APP_ORIGIN || `http://127.0.0.1:${PORT}`;
+}
+
+function googleRedirectUri(): string {
+  return GOOGLE_REDIRECT_URI || `${appOrigin()}/auth/google/callback`;
+}
+
+function hasAccountSession(session: SessionShape | null | undefined): boolean {
+  return typeof session?.userId === "string" && session.userId.length > 0;
+}
+
+function hasSpotifySession(session: SessionShape | null | undefined): boolean {
+  return typeof session?.access_token === "string" && session.access_token.length > 0;
+}
+
+function setAccountSession(
+  session: SessionShape,
+  user: { id: string; email: string; displayName: string }
+) {
+  session.userId = user.id;
+  session.email = user.email;
+  session.displayName = user.displayName;
+}
+
+function accountPayload(session: SessionShape | null | undefined) {
+  if (!hasAccountSession(session)) return null;
+  return {
+    id: session!.userId,
+    email: session!.email,
+    displayName: session!.displayName,
+  };
+}
+
+function authErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
 
 async function fetchSpotify(path: string, session: SessionShape | null | undefined) {
   if (!session?.access_token) {
@@ -201,7 +250,131 @@ app.get("/api/oauth-redirect-uri", (_req, res) => {
   });
 });
 
+app.post("/api/auth/signup", async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as { email?: string; password?: string; displayName?: string };
+    const email = typeof body.email === "string" ? body.email : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    const displayName = typeof body.displayName === "string" ? body.displayName : undefined;
+    if (!email || !password) {
+      res.status(400).json({ error: "Email and password are required." });
+      return;
+    }
+    const { user } = await createEmailUser({ email, password, displayName });
+    if (req.session) setAccountSession(req.session, user);
+    res.json({ ok: true, user });
+  } catch (error) {
+    res.status(400).json({ error: authErrorMessage(error, "Could not create account.") });
+  }
+});
+
+app.post("/api/auth/signin", async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as { email?: string; password?: string };
+    const email = typeof body.email === "string" ? body.email : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    if (!email || !password) {
+      res.status(400).json({ error: "Email and password are required." });
+      return;
+    }
+    const { user } = await verifyEmailUser(email, password);
+    if (req.session) setAccountSession(req.session, user);
+    res.json({ ok: true, user });
+  } catch (error) {
+    res.status(401).json({ error: authErrorMessage(error, "Invalid email or password.") });
+  }
+});
+
+app.get("/auth/google", (req, res) => {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    res.status(500).send("Server missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET");
+    return;
+  }
+  const state = crypto.randomBytes(16).toString("hex");
+  if (req.session) req.session.oauth_state = state;
+  const authorize = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  authorize.searchParams.set("client_id", GOOGLE_CLIENT_ID);
+  authorize.searchParams.set("redirect_uri", googleRedirectUri());
+  authorize.searchParams.set("response_type", "code");
+  authorize.searchParams.set("scope", "openid email profile");
+  authorize.searchParams.set("state", state);
+  authorize.searchParams.set("prompt", "select_account");
+  res.redirect(authorize.toString());
+});
+
+app.get("/auth/google/callback", async (req, res) => {
+  const frontend = appOrigin();
+  try {
+    const err = typeof req.query.error === "string" ? req.query.error : "";
+    if (err) {
+      res.redirect(`${frontend}/#/error=${encodeURIComponent(err)}`);
+      return;
+    }
+    const code = typeof req.query.code === "string" ? req.query.code : "";
+    const state = typeof req.query.state === "string" ? req.query.state : "";
+    if (!code || state !== req.session?.oauth_state) {
+      res.redirect(`${frontend}/#/error=${encodeURIComponent("invalid_state_or_code")}`);
+      return;
+    }
+    if (req.session) req.session.oauth_state = undefined;
+
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: googleRedirectUri(),
+        grant_type: "authorization_code",
+      }),
+    });
+    const tokens = (await tokenRes.json().catch(() => ({}))) as {
+      access_token?: string;
+      error?: string;
+      error_description?: string;
+    };
+    if (!tokenRes.ok || !tokens.access_token) {
+      const msg =
+        typeof tokens.error_description === "string"
+          ? tokens.error_description
+          : typeof tokens.error === "string"
+            ? tokens.error
+            : "google_token_exchange_failed";
+      throw new Error(msg);
+    }
+
+    const profileRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+    const profile = (await profileRes.json().catch(() => ({}))) as {
+      sub?: string;
+      email?: string;
+      name?: string;
+    };
+    if (!profileRes.ok || !profile.sub || !profile.email) {
+      throw new Error("google_profile_failed");
+    }
+
+    const { user } = await findOrCreateGoogleUser({
+      googleId: profile.sub,
+      email: profile.email,
+      displayName: profile.name || profile.email,
+    });
+    if (req.session) setAccountSession(req.session, user);
+    res.redirect(`${frontend}/#/connected`);
+  } catch (error) {
+    console.error(error);
+    const msg = authErrorMessage(error, "unknown");
+    res.redirect(`${frontend}/#/error=${encodeURIComponent(msg)}`);
+  }
+});
+
 app.get("/auth/login", (req, res) => {
+  if (!hasAccountSession(req.session)) {
+    res.redirect(`${appOrigin()}/#/error=${encodeURIComponent("Sign in to your Sift account first.")}`);
+    return;
+  }
   if (!SPOTIFY_CLIENT_ID || !SPOTIFY_REDIRECT_URI) {
     return res.status(500).send("Server missing SPOTIFY_CLIENT_ID or SPOTIFY_REDIRECT_URI");
   }
@@ -224,7 +397,7 @@ app.get("/auth/login", (req, res) => {
 });
 
 app.get("/auth/callback", async (req, res) => {
-  const frontend = PUBLIC_APP_ORIGIN || `http://127.0.0.1:${PORT}`;
+  const frontend = appOrigin();
   try {
     const err = typeof req.query.error === "string" ? req.query.error : "";
     if (err) {
@@ -343,11 +516,24 @@ app.get("/api/recently-played", guard, async (req, res) => {
 });
 
 app.get("/api/auth-status", async (req, res) => {
+  let spotifyConnected = hasSpotifySession(req.session);
   try {
-    if (req.session) await refreshIfNeeded(req.session);
-    res.json({ authenticated: !!(req.session && req.session.access_token) });
-  } catch {
-    res.json({ authenticated: false });
+    if (spotifyConnected && req.session) {
+      await refreshIfNeeded(req.session);
+      spotifyConnected = hasSpotifySession(req.session);
+    }
+    res.json({
+      authenticated: hasAccountSession(req.session),
+      spotifyConnected,
+      user: accountPayload(req.session),
+    });
+  } catch (error) {
+    console.error(error);
+    res.json({
+      authenticated: hasAccountSession(req.session),
+      spotifyConnected: hasSpotifySession(req.session),
+      user: accountPayload(req.session),
+    });
   }
 });
 

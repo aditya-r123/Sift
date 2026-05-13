@@ -31,6 +31,80 @@ function showAppShell() {
   if (app) app.hidden = false;
 }
 
+type AccountUser = {
+  displayName?: string;
+  email?: string;
+};
+
+function accountInitials(user: AccountUser): string {
+  const fromName = String(user.displayName || "").trim();
+  if (fromName) {
+    const parts = fromName.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`.toUpperCase();
+    }
+    return fromName.slice(0, 2).toUpperCase();
+  }
+  const fromEmail = String(user.email || "").trim();
+  return fromEmail ? fromEmail.slice(0, 2).toUpperCase() : "?";
+}
+
+function accountLabel(user: AccountUser): string {
+  const fromName = String(user.displayName || "").trim();
+  if (fromName) return fromName;
+  const fromEmail = String(user.email || "").trim();
+  return fromEmail ? fromEmail.split("@")[0] || "Account" : "Account";
+}
+
+let accountBadgeBound = false;
+
+function bindAccountBadge() {
+  if (accountBadgeBound) return;
+  qs("#user-chip")?.addEventListener("click", () => {
+    qs("#tab-profile-btn")?.click();
+  });
+  accountBadgeBound = true;
+}
+
+function clearAccountBadge() {
+  const chip = qs("#user-chip");
+  const avatar = qs("#user-chip-avatar");
+  const name = qs("#user-chip-name");
+  if (chip) chip.hidden = true;
+  if (avatar) avatar.textContent = "";
+  if (name) name.textContent = "";
+}
+
+function renderAccountBadge(user?: AccountUser) {
+  const chip = qs("#user-chip");
+  const avatar = qs("#user-chip-avatar");
+  const name = qs("#user-chip-name");
+  if (!chip || !avatar || !name || !user || (!user.displayName && !user.email)) {
+    clearAccountBadge();
+    return;
+  }
+  bindAccountBadge();
+  const label = accountLabel(user);
+  avatar.textContent = accountInitials(user);
+  name.textContent = label;
+  chip.hidden = false;
+  chip.setAttribute("aria-label", `${label} profile`);
+}
+
+async function postJson(url: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetch(`${apiBase}${url}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) {
+    throw new Error(typeof data.error === "string" ? data.error : res.statusText);
+  }
+  return data;
+}
+
 async function fetchJson(url: string): Promise<Record<string, unknown>> {
   const res = await fetch(`${apiBase}${url}`, { credentials: "include" });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -263,7 +337,7 @@ async function openTrackInsights(trackId: string, title: string) {
 }
 
 function bindTabs() {
-  const tablist = document.querySelector('[role="tablist"]');
+  const tablist = document.querySelector('#app-shell [role="tablist"]');
   if (!tablist) return;
   const tabs = [...tablist.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
 
@@ -360,23 +434,41 @@ function applyGuestUi() {
   const connectLink = qs("#link-spotify-connect");
   if (connectLink) connectLink.hidden = false;
 
+  clearAccountBadge();
+
   qs("#tab-discover-btn")?.click();
+}
+
+function clearSpotifyPanels() {
+  renderList("#top-artists", "", "#artists-empty");
+  renderList("#top-tracks", "", "#tracks-empty");
+  renderList("#recent", "", "#recent-empty");
+}
+
+function showSpotifyGate() {
+  const profile = qs("#profile");
+  const profileGate = qs("#profile-gate");
+  const statsPanel = qs("#stats-panel");
+  const connectLink = qs("#link-spotify-connect");
+  if (profile) {
+    profile.hidden = true;
+    profile.innerHTML = "";
+  }
+  if (profileGate) profileGate.hidden = false;
+  if (statsPanel) statsPanel.hidden = true;
+  if (connectLink) connectLink.hidden = false;
+  clearSpotifyPanels();
 }
 
 const TOP_WINDOW = "short_term";
 
-async function loadAuthenticatedUI() {
-  const logoutBtn = qs("#btn-logout");
-  const connectLink = qs("#link-spotify-connect");
-  const statsPanel = qs("#stats-panel");
-  if (!logoutBtn) return;
-
-  showAppShell();
-  if (connectLink) connectLink.hidden = true;
-  logoutBtn.hidden = false;
+async function loadSpotifyContent() {
   const profileGate = qs("#profile-gate");
+  const statsPanel = qs("#stats-panel");
+  const connectLink = qs("#link-spotify-connect");
   if (profileGate) profileGate.hidden = true;
   if (statsPanel) statsPanel.hidden = false;
+  if (connectLink) connectLink.hidden = true;
 
   const me = (await fetchJson("/api/me")) as { user?: SpotifyUser };
   if (me.user) renderProfile(me.user);
@@ -420,9 +512,91 @@ async function loadAuthenticatedUI() {
   await Promise.all([reloadArtists(), reloadTracks(), reloadRecent()]);
 }
 
+async function loadAccountUI(status: { spotifyConnected?: boolean; user?: AccountUser }) {
+  const logoutBtn = qs("#btn-logout");
+  if (!logoutBtn) return;
+
+  showAppShell();
+  logoutBtn.hidden = false;
+  renderAccountBadge(status.user);
+
+  if (status.spotifyConnected) {
+    try {
+      await loadSpotifyContent();
+      qs("#tab-profile-btn")?.click();
+    } catch (e) {
+      showSpotifyGate();
+      showError(e instanceof Error ? e.message : String(e));
+    }
+    return;
+  }
+
+  showSpotifyGate();
+  qs("#tab-discover-btn")?.click();
+}
+
+function bindAccountAuth() {
+  const signinTab = qs("#auth-tab-signin");
+  const signupTab = qs("#auth-tab-signup");
+  const signinPanel = qs("#auth-panel-signin");
+  const signupPanel = qs("#auth-panel-signup");
+
+  function selectAuthTab(mode: "signin" | "signup") {
+    signinTab?.classList.toggle("is-active", mode === "signin");
+    signupTab?.classList.toggle("is-active", mode === "signup");
+    signinTab?.setAttribute("aria-selected", mode === "signin" ? "true" : "false");
+    signupTab?.setAttribute("aria-selected", mode === "signup" ? "true" : "false");
+    if (signinPanel) signinPanel.hidden = mode !== "signin";
+    if (signupPanel) signupPanel.hidden = mode !== "signup";
+  }
+
+  signinTab?.addEventListener("click", () => selectAuthTab("signin"));
+  signupTab?.addEventListener("click", () => selectAuthTab("signup"));
+
+  async function handleAccountResponse() {
+    const status = (await fetchJson("/api/auth-status")) as {
+      authenticated?: boolean;
+      spotifyConnected?: boolean;
+      user?: AccountUser;
+    };
+    showError(null);
+    await loadAccountUI(status);
+  }
+
+  qs("#signin-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const data = new FormData(form);
+    const email = String(data.get("email") || "");
+    const password = String(data.get("password") || "");
+    try {
+      await postJson("/api/auth/signin", { email, password });
+      await handleAccountResponse();
+    } catch (e) {
+      showError(e instanceof Error ? e.message : String(e));
+    }
+  });
+
+  qs("#signup-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const data = new FormData(form);
+    const email = String(data.get("email") || "");
+    const password = String(data.get("password") || "");
+    const displayName = String(data.get("displayName") || "");
+    try {
+      await postJson("/api/auth/signup", { email, password, displayName });
+      await handleAccountResponse();
+    } catch (e) {
+      showError(e instanceof Error ? e.message : String(e));
+    }
+  });
+}
+
 async function bootstrap() {
   bindTabs();
   bindTrackInsightClicks();
+  bindAccountAuth();
 
   const hash = (location.hash || "").replace(/^#/, "");
   if (hash.startsWith("error=")) {
@@ -432,16 +606,20 @@ async function bootstrap() {
     history.replaceState(null, "", location.pathname + location.search);
   }
 
+
   const logoutBtn = qs("#btn-logout");
   logoutBtn?.addEventListener("click", () => {
     window.location.href = "/auth/logout";
   });
 
   try {
-    const status = (await fetchJson("/api/auth-status")) as { authenticated?: boolean };
+    const status = (await fetchJson("/api/auth-status")) as {
+      authenticated?: boolean;
+      spotifyConnected?: boolean;
+      user?: AccountUser;
+    };
     if (status.authenticated) {
-      await loadAuthenticatedUI();
-      qs("#tab-profile-btn")?.click();
+      await loadAccountUI(status);
       return;
     }
   } catch (e) {
