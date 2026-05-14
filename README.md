@@ -1,5 +1,15 @@
 # SiftV0
 
+## Project layout
+
+```text
+client/   Browser UI, Vite config, Tailwind styles, and frontend assets.
+server/   Express API, Spotify/RapidAPI integrations, auth/session logic, and future database modules.
+shared/   TypeScript contracts and constants shared by client and server.
+```
+
+This refactor preserves the existing app behavior while giving future work clear ownership boundaries.
+
 ## Spotify Web API keys
 
 Open the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard), **Create app** (or pick an existing app), then note **Client ID** and **Client Secret** (reveal/copy from **Settings**). Under **Redirect URIs**, add the exact callback URLs you’ll use—for local dev append `http://127.0.0.1:3001/auth/callback` (prefer **127.0.0.1** over **localhost** so cookies match the Spotify redirect).

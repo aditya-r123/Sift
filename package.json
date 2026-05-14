@@ -4,9 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"vite\" \"tsx watch server/index.ts\"",
-    "build": "vite build",
-    "start": "tsx server/index.ts"
+    "dev": "concurrently \"vite --config client/vite.config.ts\" \"tsx watch server/src/index.ts\"",
+    "build": "vite build --config client/vite.config.ts",
+    "start": "tsx server/src/index.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "cookie-session": "^2.1.0",

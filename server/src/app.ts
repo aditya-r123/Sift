@@ -14,21 +14,22 @@ interface HttpError extends Error {
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.join(__dirname, "..");
+const repoRoot = path.join(__dirname, "../..");
 
 /** Load `.env` from repo root so Spotify vars work even when `cwd` is not the project folder. */
 dotenv.config({ path: path.join(repoRoot, ".env") });
 dotenv.config();
 
-/** Vite emits `public/`. Locally this is `{repoRoot}/public`; bundled on Vercel, `cwd`/`public` is typical. */
+/** Vite emits `client/public/`. Keep legacy root `public/` as a fallback for older builds. */
 function resolveWebRoot(): string {
-  const fromCwd = path.join(process.cwd(), "public");
-  const fromRepo = path.join(repoRoot, "public");
-  for (const dir of [fromCwd, fromRepo]) {
+  const fromCwdClient = path.join(process.cwd(), "client", "public");
+  const fromRepoClient = path.join(repoRoot, "client", "public");
+  const legacyRoot = path.join(repoRoot, "public");
+  for (const dir of [fromCwdClient, fromRepoClient, legacyRoot]) {
     const indexPath = path.join(dir, "index.html");
     if (existsSync(indexPath)) return path.resolve(dir);
   }
-  return path.resolve(fromCwd);
+  return path.resolve(fromCwdClient);
 }
 
 const SPOTIFY_CLIENT_ID = String(process.env.SPOTIFY_CLIENT_ID ?? "").trim();
@@ -378,7 +379,7 @@ app.get("/api/track-insights/:trackId", guard, async (req, res) => {
   }
 });
 
-/** Built UI (`vite build`). Vercel ignores `express.static` for this app bundle; SPA fallback uses `sendFile` from traced `public/**` (`vercel.json` includeFiles). */
+/** Built UI (`vite build`). Vercel ignores `express.static` for this app bundle; SPA fallback uses `sendFile` from traced `client/public/**` (`vercel.json` includeFiles). */
 const webRoot = resolveWebRoot();
 app.use(express.static(webRoot));
 app.get("*", (req, res, next) => {
@@ -392,26 +393,4 @@ app.get("*", (req, res, next) => {
 });
 
 export default app;
-
-const startedDirectly =
-  typeof process.argv[1] === "string" &&
-  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
-
-if (startedDirectly) {
-  const server = app.listen(PORT, () => {
-    console.log(`API + static: http://127.0.0.1:${PORT}`);
-    if (SPOTIFY_REDIRECT_URI) {
-      console.log(`Spotify redirect_uri (must match Dashboard exactly): ${SPOTIFY_REDIRECT_URI}`);
-    }
-  });
-  server.on("error", (err: NodeJS.ErrnoException) => {
-    if (err.code === "EADDRINUSE") {
-      console.error(
-        `Port ${PORT} is already in use. Stop the other process: lsof -nP -iTCP:${PORT} -sTCP:LISTEN\n` +
-          `If you change PORT, update SPOTIFY_REDIRECT_URI and Spotify Dashboard to match (e.g. http://127.0.0.1:${PORT}/auth/callback).`
-      );
-      process.exit(1);
-    }
-    throw err;
-  });
-}
+export { PORT, SPOTIFY_REDIRECT_URI };

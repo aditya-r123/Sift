@@ -1,6 +1,7 @@
 node_modules/
 dist/
 public/
+client/public/
 .env
 .cursor/
 .claude/
