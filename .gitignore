@@ -3,5 +3,6 @@ dist/
 public/
 client/public/
 .env
+server/data/users.json
 .cursor/
 .claude/
