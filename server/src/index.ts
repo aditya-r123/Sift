@@ -1,9 +1,15 @@
 import app, { PORT, SPOTIFY_REDIRECT_URI } from "./app.js";
+import { isMongoConfigured, mongoHealth } from "./mongo.js";
 
 const server = app.listen(PORT, () => {
   console.log(`API + static: http://127.0.0.1:${PORT}`);
   if (SPOTIFY_REDIRECT_URI) {
     console.log(`Spotify redirect_uri (must match Dashboard exactly): ${SPOTIFY_REDIRECT_URI}`);
+  }
+  if (isMongoConfigured()) {
+    void mongoHealth().then((h) => {
+      console.log(h.ok ? "MongoDB: ping OK" : `MongoDB: ping failed — ${h.error ?? "unknown"}`);
+    });
   }
 });
 

@@ -7,11 +7,12 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { mongoHealth } from "./mongo.js";
 import {
   createEmailUser,
   findOrCreateGoogleUser,
   verifyEmailUser,
-} from "./users.js";
+} from "../users.js";
 
 interface HttpError extends Error {
   status?: number;
@@ -235,7 +236,13 @@ const SCOPES = [
   "user-read-recently-played",
 ].join(" ");
 
-app.get("/health", (_, res) => res.json({ ok: true }));
+app.get("/health", async (_, res) => {
+  const mongo = await mongoHealth();
+  res.json({
+    ok: true,
+    mongo: mongo.configured ? { configured: true, ok: mongo.ok, error: mongo.error } : { configured: false },
+  });
+});
 
 app.get("/api/oauth-redirect-uri", (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
