@@ -1,5 +1,7 @@
 // Initialize Vercel Web Analytics
 import { inject } from '@vercel/analytics';
+import type { Session } from '@supabase/supabase-js';
+import { supabase } from './supabase.js';
 
 inject();
 
@@ -93,20 +95,6 @@ function renderAccountBadge(user?: AccountUser) {
   name.textContent = label;
   chip.hidden = false;
   chip.setAttribute("aria-label", `${label} profile`);
-}
-
-async function postJson(url: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const res = await fetch(`${apiBase}${url}`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) {
-    throw new Error(typeof data.error === "string" ? data.error : res.statusText);
-  }
-  return data;
 }
 
 async function fetchJson(url: string): Promise<Record<string, unknown>> {
@@ -516,27 +504,50 @@ async function loadSpotifyContent() {
   await Promise.all([reloadArtists(), reloadTracks(), reloadRecent()]);
 }
 
-async function loadAccountUI(status: { spotifyConnected?: boolean; user?: AccountUser }) {
-  const logoutBtn = qs("#btn-logout");
-  if (!logoutBtn) return;
+function accountUserFromSession(session: Session): AccountUser {
+  const meta = (session.user.user_metadata ?? {}) as Record<string, unknown>;
+  const displayName =
+    [meta.display_name, meta.full_name, meta.name]
+      .map((v) => (typeof v === "string" ? v.trim() : ""))
+      .find((v) => v.length > 0) || "";
+  return { displayName, email: session.user.email || "" };
+}
 
-  showAppShell();
-  logoutBtn.hidden = false;
-  renderAccountBadge(status.user);
-
-  if (status.spotifyConnected) {
-    try {
+async function loadSpotifyState() {
+  try {
+    const status = (await fetchJson("/api/auth-status")) as { spotifyConnected?: boolean };
+    if (status.spotifyConnected) {
       await loadSpotifyContent();
       qs("#tab-profile-btn")?.click();
-    } catch (e) {
-      showSpotifyGate();
-      showError(e instanceof Error ? e.message : String(e));
+      return;
     }
+  } catch (e) {
+    showError(e instanceof Error ? e.message : String(e));
+  }
+  showSpotifyGate();
+  qs("#tab-discover-btn")?.click();
+}
+
+let currentAccountId: string | null = null;
+
+async function applyAuthState(session: Session | null) {
+  const accountId = session?.user.id ?? null;
+
+  if (!session || !accountId) {
+    currentAccountId = null;
+    applyGuestUi();
     return;
   }
 
-  showSpotifyGate();
-  qs("#tab-discover-btn")?.click();
+  if (accountId === currentAccountId) return;
+  currentAccountId = accountId;
+
+  showError(null);
+  showAppShell();
+  const logoutBtn = qs("#btn-logout");
+  if (logoutBtn) logoutBtn.hidden = false;
+  renderAccountBadge(accountUserFromSession(session));
+  await loadSpotifyState();
 }
 
 function bindAccountAuth() {
@@ -557,25 +568,16 @@ function bindAccountAuth() {
   signinTab?.addEventListener("click", () => selectAuthTab("signin"));
   signupTab?.addEventListener("click", () => selectAuthTab("signup"));
 
-  async function handleAccountResponse() {
-    const status = (await fetchJson("/api/auth-status")) as {
-      authenticated?: boolean;
-      spotifyConnected?: boolean;
-      user?: AccountUser;
-    };
-    showError(null);
-    await loadAccountUI(status);
-  }
-
   qs("#signin-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget as HTMLFormElement;
     const data = new FormData(form);
-    const email = String(data.get("email") || "");
+    const email = String(data.get("email") || "").trim();
     const password = String(data.get("password") || "");
     try {
-      await postJson("/api/auth/signin", { email, password });
-      await handleAccountResponse();
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw new Error(error.message);
+      showError(null);
     } catch (e) {
       showError(e instanceof Error ? e.message : String(e));
     }
@@ -585,12 +587,35 @@ function bindAccountAuth() {
     event.preventDefault();
     const form = event.currentTarget as HTMLFormElement;
     const data = new FormData(form);
-    const email = String(data.get("email") || "");
+    const email = String(data.get("email") || "").trim();
     const password = String(data.get("password") || "");
-    const displayName = String(data.get("displayName") || "");
+    const displayName = String(data.get("displayName") || "").trim();
     try {
-      await postJson("/api/auth/signup", { email, password, displayName });
-      await handleAccountResponse();
+      const { data: result, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: displayName ? { display_name: displayName } : {} },
+      });
+      if (error) throw new Error(error.message);
+      if (!result.session) {
+        showError("Account created. Check your email to confirm your address, then sign in.");
+        selectAuthTab("signin");
+      } else {
+        showError(null);
+      }
+    } catch (e) {
+      showError(e instanceof Error ? e.message : String(e));
+    }
+  });
+
+  qs("#google-signin")?.addEventListener("click", async (event) => {
+    event.preventDefault();
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: window.location.origin },
+      });
+      if (error) throw new Error(error.message);
     } catch (e) {
       showError(e instanceof Error ? e.message : String(e));
     }
@@ -612,30 +637,14 @@ async function bootstrap() {
 
 
   const logoutBtn = qs("#btn-logout");
-  logoutBtn?.addEventListener("click", () => {
+  logoutBtn?.addEventListener("click", async () => {
+    await supabase.auth.signOut();
     window.location.href = "/auth/logout";
   });
 
-  try {
-    const status = (await fetchJson("/api/auth-status")) as {
-      authenticated?: boolean;
-      spotifyConnected?: boolean;
-      user?: AccountUser;
-    };
-    if (status.authenticated) {
-      await loadAccountUI(status);
-      return;
-    }
-  } catch (e) {
-    showError(
-      e instanceof Error && e.message
-        ? e.message
-        : "Could not reach backend. Deploy the Express API or run locally with npm start."
-    );
-    return;
-  }
-
-  applyGuestUi();
+  supabase.auth.onAuthStateChange((_event, session) => {
+    void applyAuthState(session);
+  });
 }
 
 bootstrap().catch((e) => showError(String(e instanceof Error ? e.message : e)));

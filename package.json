@@ -9,6 +9,7 @@
     "start": "tsx server/index.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
     "@vercel/analytics": "^2.0.1",
     "cookie-session": "^2.1.0",
     "dotenv": "^16.4.5",
