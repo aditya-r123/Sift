@@ -4,7 +4,7 @@
  */
 import express from "express";
 
-import app from "./server/src/app.js";
+import app from "./server/index.js";
 
 void express.Router;
 
