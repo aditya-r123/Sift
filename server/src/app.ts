@@ -8,11 +8,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { mongoHealth } from "./mongo.js";
+import { isFeedSource, isSwipeDirection, recordSwipe } from "./swipes.js";
 import {
   createEmailUser,
   findOrCreateGoogleUser,
   verifyEmailUser,
 } from "../users.js";
+import type { RecordSwipeRequest } from "../../shared/src/contracts.js";
 
 interface HttpError extends Error {
   status?: number;
@@ -118,6 +120,16 @@ function accountPayload(session: SessionShape | null | undefined) {
 
 function authErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function requiredText(value: unknown, maxLength: number): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text.slice(0, maxLength);
+}
+
+function optionalText(value: unknown, maxLength: number): string | undefined {
+  const text = requiredText(value, maxLength);
+  return text || undefined;
 }
 
 async function fetchSpotify(path: string, session: SessionShape | null | undefined) {
@@ -542,6 +554,48 @@ app.get("/api/auth-status", async (req, res) => {
       spotifyConnected: hasSpotifySession(req.session),
       user: accountPayload(req.session),
     });
+  }
+});
+
+app.post("/api/swipes", async (req, res) => {
+  try {
+    if (!hasAccountSession(req.session)) {
+      res.status(401).json({ error: "Sign in to record swipes." });
+      return;
+    }
+
+    const body = (req.body ?? {}) as Partial<RecordSwipeRequest>;
+    const cardId = requiredText(body.cardId, 128);
+    const spotifyTrackId = requiredText(body.spotifyTrackId, 128);
+    const source = body.source;
+    const direction = body.direction;
+
+    if (!cardId || !spotifyTrackId) {
+      res.status(400).json({ error: "Swipe card id and track id are required." });
+      return;
+    }
+    if (!isFeedSource(source)) {
+      res.status(400).json({ error: "Invalid swipe source." });
+      return;
+    }
+    if (!isSwipeDirection(direction)) {
+      res.status(400).json({ error: "Invalid swipe direction." });
+      return;
+    }
+
+    const swipe = await recordSwipe(req.session!.userId, {
+      cardId,
+      spotifyTrackId,
+      source,
+      direction,
+      title: optionalText(body.title, 150),
+      artist: optionalText(body.artist, 150),
+    });
+
+    res.status(201).json({ ok: true, swipe });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: authErrorMessage(error, "Could not record swipe.") });
   }
 });
 

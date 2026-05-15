@@ -1,9 +1,17 @@
 // Initialize Vercel Web Analytics
 import { inject } from '@vercel/analytics';
+import type {
+  FeedSource,
+  RecordedSwipe,
+  RecordSwipeRequest,
+  RecordSwipeResponse,
+  SwipeDirection,
+} from "../../shared/src/contracts.js";
 
 inject();
 
 const apiBase = "";
+const SWIPE_THRESHOLD_PX = 80;
 
 function qs(sel: string): HTMLElement | null {
   return document.querySelector(sel);
@@ -95,7 +103,7 @@ function renderAccountBadge(user?: AccountUser) {
   chip.setAttribute("aria-label", `${label} profile`);
 }
 
-async function postJson(url: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function postJson(url: string, body: object): Promise<Record<string, unknown>> {
   const res = await fetch(`${apiBase}${url}`, {
     method: "POST",
     credentials: "include",
@@ -107,6 +115,199 @@ async function postJson(url: string, body: Record<string, unknown>): Promise<Rec
     throw new Error(typeof data.error === "string" ? data.error : res.statusText);
   }
   return data;
+}
+
+function directionFromDelta(deltaX: number): SwipeDirection | null {
+  if (deltaX > SWIPE_THRESHOLD_PX) return "YES";
+  if (deltaX < -SWIPE_THRESHOLD_PX) return "NO";
+  return null;
+}
+
+function swipeDirectionFromValue(value: string | undefined): SwipeDirection | null {
+  return value === "YES" || value === "NO" ? value : null;
+}
+
+function feedSourceFromValue(value: string | undefined): FeedSource | null {
+  return value === "DISCOVER" || value === "EXPLORE" ? value : null;
+}
+
+function swipeFeedFor(el: HTMLElement): HTMLElement | null {
+  return el.closest<HTMLElement>("[data-swipe-feed]");
+}
+
+function swipeStackFor(el: HTMLElement): HTMLElement | null {
+  return el.closest<HTMLElement>("[data-swipe-stack]");
+}
+
+function topSwipeCard(feed: HTMLElement | null): HTMLElement | null {
+  return feed?.querySelector<HTMLElement>(".swipe-card:not(.is-committing)") ?? null;
+}
+
+function updateSwipeFeedback(card: HTMLElement, message: string) {
+  const feedback = swipeFeedFor(card)?.querySelector<HTMLElement>("[data-swipe-feedback]");
+  if (feedback) feedback.textContent = message;
+}
+
+function updateSwipeEmpty(stack: HTMLElement | null) {
+  const feed = stack ? swipeFeedFor(stack) : null;
+  if (!feed) return;
+  const hasCards = !!feed.querySelector(".swipe-card");
+  const empty = feed.querySelector<HTMLElement>("[data-swipe-empty]");
+  if (empty) empty.hidden = hasCards;
+  feed.querySelectorAll<HTMLButtonElement>("[data-swipe-action]").forEach((button) => {
+    button.disabled = !hasCards;
+  });
+}
+
+function setSwipePreview(card: HTMLElement, direction: SwipeDirection | null) {
+  if (direction) {
+    card.dataset.swipePreview = direction;
+  } else {
+    delete card.dataset.swipePreview;
+  }
+}
+
+function setSwipeTransform(card: HTMLElement, deltaX: number) {
+  const rotate = Math.max(-14, Math.min(14, deltaX / 14));
+  card.style.transform = `translate3d(${deltaX}px, 0, 0) rotate(${rotate}deg)`;
+}
+
+function resetSwipeCard(card: HTMLElement) {
+  card.classList.remove("is-dragging", "is-committing");
+  delete card.dataset.swipePending;
+  setSwipePreview(card, null);
+  card.style.transform = "";
+}
+
+function swipePayload(card: HTMLElement, direction: SwipeDirection): RecordSwipeRequest {
+  const cardId = String(card.dataset.cardId || "").trim();
+  const spotifyTrackId = String(card.dataset.spotifyTrackId || "").trim();
+  const source = feedSourceFromValue(card.dataset.feedSource);
+  if (!cardId || !spotifyTrackId || !source) {
+    throw new Error("Swipe card is missing required metadata.");
+  }
+  return {
+    cardId,
+    spotifyTrackId,
+    source,
+    direction,
+    title: card.dataset.title || undefined,
+    artist: card.dataset.artist || undefined,
+  };
+}
+
+async function recordSwipe(card: HTMLElement, direction: SwipeDirection): Promise<RecordedSwipe> {
+  const response = (await postJson("/api/swipes", swipePayload(card, direction))) as RecordSwipeResponse;
+  return response.swipe;
+}
+
+async function completeSwipe(card: HTMLElement, direction: SwipeDirection) {
+  if (card.dataset.swipePending === "true") return;
+  const stack = swipeStackFor(card);
+  const exitX = direction === "YES" ? "120vw" : "-120vw";
+  const exitRotate = direction === "YES" ? "18deg" : "-18deg";
+
+  card.dataset.swipePending = "true";
+  card.classList.remove("is-dragging");
+  card.classList.add("is-committing");
+  setSwipePreview(card, direction);
+  card.style.transform = `translate3d(${exitX}, 0, 0) rotate(${exitRotate})`;
+
+  try {
+    const swipe = await recordSwipe(card, direction);
+    const label = swipe.title || card.dataset.title || "Card";
+    updateSwipeFeedback(card, `${label} recorded as ${direction}.`);
+    window.setTimeout(() => {
+      const next = stack?.querySelector<HTMLElement>(".swipe-card:not(.is-committing)");
+      card.remove();
+      updateSwipeEmpty(stack);
+      next?.focus({ preventScroll: true });
+    }, 180);
+  } catch (e) {
+    resetSwipeCard(card);
+    const message = e instanceof Error ? e.message : String(e);
+    updateSwipeFeedback(card, message);
+    showError(message);
+  }
+}
+
+function releaseSwipePointer(card: HTMLElement, pointerId: number) {
+  if (card.hasPointerCapture(pointerId)) {
+    card.releasePointerCapture(pointerId);
+  }
+}
+
+function bindSwipeCard(card: HTMLElement) {
+  if (card.dataset.swipeBound === "true") return;
+  card.dataset.swipeBound = "true";
+
+  let pointerId: number | null = null;
+  let startX = 0;
+  let currentX = 0;
+
+  card.addEventListener("pointerdown", (event) => {
+    if (card.dataset.swipePending === "true") return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    pointerId = event.pointerId;
+    startX = event.clientX;
+    currentX = event.clientX;
+    card.setPointerCapture(pointerId);
+    card.classList.add("is-dragging");
+    showError(null);
+  });
+
+  card.addEventListener("pointermove", (event) => {
+    if (pointerId !== event.pointerId) return;
+    currentX = event.clientX;
+    const deltaX = currentX - startX;
+    setSwipeTransform(card, deltaX);
+    setSwipePreview(card, directionFromDelta(deltaX));
+    event.preventDefault();
+  });
+
+  card.addEventListener("pointerup", (event) => {
+    if (pointerId !== event.pointerId) return;
+    releaseSwipePointer(card, pointerId);
+    const deltaX = event.clientX - startX;
+    const direction = directionFromDelta(deltaX);
+    pointerId = null;
+    if (direction) {
+      void completeSwipe(card, direction);
+      return;
+    }
+    resetSwipeCard(card);
+  });
+
+  card.addEventListener("pointercancel", () => {
+    if (pointerId !== null) {
+      releaseSwipePointer(card, pointerId);
+      pointerId = null;
+    }
+    resetSwipeCard(card);
+  });
+
+  card.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    void completeSwipe(card, event.key === "ArrowRight" ? "YES" : "NO");
+  });
+}
+
+function bindSwipeControls() {
+  document.querySelectorAll<HTMLElement>(".swipe-card").forEach(bindSwipeCard);
+
+  document.querySelectorAll<HTMLButtonElement>("[data-swipe-action]").forEach((button) => {
+    if (button.dataset.swipeBound === "true") return;
+    button.dataset.swipeBound = "true";
+    button.addEventListener("click", () => {
+      const direction = swipeDirectionFromValue(button.dataset.swipeAction);
+      const card = topSwipeCard(swipeFeedFor(button));
+      if (!direction || !card) return;
+      void completeSwipe(card, direction);
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-swipe-stack]").forEach(updateSwipeEmpty);
 }
 
 async function fetchJson(url: string): Promise<Record<string, unknown>> {
@@ -600,6 +801,7 @@ function bindAccountAuth() {
 async function bootstrap() {
   bindTabs();
   bindTrackInsightClicks();
+  bindSwipeControls();
   bindAccountAuth();
 
   const hash = (location.hash || "").replace(/^#/, "");

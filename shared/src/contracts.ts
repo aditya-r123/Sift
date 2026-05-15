@@ -8,7 +8,7 @@ export type AuthStatusResponse = {
 
 export type SwipeDirection = "YES" | "NO";
 
-export type FeedSource = "DISCOVER" | "EXPLORE" | "FRIEND";
+export type FeedSource = "DISCOVER" | "EXPLORE";
 
 export type SongCard = {
   id: string;
@@ -29,4 +29,24 @@ export type TasteProfile = {
   instrumentalness: number;
   bpmTarget?: number;
   genreWeights?: Record<string, number>;
+};
+
+export type RecordSwipeRequest = {
+  cardId: string;
+  spotifyTrackId: string;
+  source: FeedSource;
+  direction: SwipeDirection;
+  title?: string;
+  artist?: string;
+};
+
+export type RecordedSwipe = RecordSwipeRequest & {
+  id: string;
+  userId: string;
+  createdAt: string;
+};
+
+export type RecordSwipeResponse = {
+  ok: true;
+  swipe: RecordedSwipe;
 };

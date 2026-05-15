@@ -4,5 +4,6 @@ public/
 client/public/
 .env
 server/data/users.json
+server/data/swipes.json
 .cursor/
 .claude/

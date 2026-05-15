@@ -209,6 +209,66 @@
             <p class="muted">
               Swipe on personalized reccomendations, based on your own or your friends' listening habits
             </p>
+            <section class="swipe-feed" data-swipe-feed="DISCOVER" aria-label="Discover cards">
+              <div class="swipe-deck" data-swipe-stack>
+                <article
+                  class="swipe-card"
+                  tabindex="0"
+                  data-card-id="discover-like-dat"
+                  data-spotify-track-id="demo-discover-like-dat"
+                  data-feed-source="DISCOVER"
+                  data-title="Like Dat"
+                  data-artist="Kodak Black"
+                >
+                  <div class="swipe-card__art swipe-card__art--ruby" aria-hidden="true">LD</div>
+                  <div class="swipe-card__body">
+                    <p class="swipe-card__kicker">From your rotation</p>
+                    <h3>Like Dat</h3>
+                    <p class="swipe-card__artist">Kodak Black</p>
+                    <div class="swipe-card__tags" aria-label="Song traits">
+                      <span>Energy</span>
+                      <span>Hip-hop</span>
+                      <span>On repeat</span>
+                    </div>
+                  </div>
+                  <div class="swipe-card__decision" aria-hidden="true">
+                    <span class="swipe-card__stamp swipe-card__stamp--no">NO</span>
+                    <span class="swipe-card__stamp swipe-card__stamp--yes">YES</span>
+                  </div>
+                </article>
+                <article
+                  class="swipe-card"
+                  tabindex="0"
+                  data-card-id="discover-digits"
+                  data-spotify-track-id="demo-discover-digits"
+                  data-feed-source="DISCOVER"
+                  data-title="Digits"
+                  data-artist="Young Thug"
+                >
+                  <div class="swipe-card__art swipe-card__art--teal" aria-hidden="true">DI</div>
+                  <div class="swipe-card__body">
+                    <p class="swipe-card__kicker">Friend signal</p>
+                    <h3>Digits</h3>
+                    <p class="swipe-card__artist">Young Thug</p>
+                    <div class="swipe-card__tags" aria-label="Song traits">
+                      <span>Rap</span>
+                      <span>BPM match</span>
+                      <span>New lane</span>
+                    </div>
+                  </div>
+                  <div class="swipe-card__decision" aria-hidden="true">
+                    <span class="swipe-card__stamp swipe-card__stamp--no">NO</span>
+                    <span class="swipe-card__stamp swipe-card__stamp--yes">YES</span>
+                  </div>
+                </article>
+              </div>
+              <div class="swipe-actions" aria-label="Discover decision buttons">
+                <button type="button" class="btn btn-compact swipe-action swipe-action--no" data-swipe-action="NO">No</button>
+                <button type="button" class="btn btn-compact swipe-action swipe-action--yes" data-swipe-action="YES">Yes</button>
+              </div>
+              <p class="muted swipe-empty" data-swipe-empty hidden>No more Discover cards.</p>
+              <p class="sr-only" data-swipe-feedback aria-live="polite"></p>
+            </section>
           </div>
 
           <div class="tab-panel" role="tabpanel" id="panel-explore" aria-labelledby="tab-explore-btn" hidden>
@@ -216,6 +276,66 @@
             <p class="muted">
               Swipe on songs and artists to find new kinds of music.
             </p>
+            <section class="swipe-feed" data-swipe-feed="EXPLORE" aria-label="Explore cards">
+              <div class="swipe-deck" data-swipe-stack>
+                <article
+                  class="swipe-card"
+                  tabindex="0"
+                  data-card-id="explore-seasons"
+                  data-spotify-track-id="demo-explore-seasons"
+                  data-feed-source="EXPLORE"
+                  data-title="Seasons"
+                  data-artist="wave to earth"
+                >
+                  <div class="swipe-card__art swipe-card__art--green" aria-hidden="true">SE</div>
+                  <div class="swipe-card__body">
+                    <p class="swipe-card__kicker">New texture</p>
+                    <h3>Seasons</h3>
+                    <p class="swipe-card__artist">wave to earth</p>
+                    <div class="swipe-card__tags" aria-label="Song traits">
+                      <span>Alternative</span>
+                      <span>Soft rock</span>
+                      <span>Mellow</span>
+                    </div>
+                  </div>
+                  <div class="swipe-card__decision" aria-hidden="true">
+                    <span class="swipe-card__stamp swipe-card__stamp--no">NO</span>
+                    <span class="swipe-card__stamp swipe-card__stamp--yes">YES</span>
+                  </div>
+                </article>
+                <article
+                  class="swipe-card"
+                  tabindex="0"
+                  data-card-id="explore-good-way"
+                  data-spotify-track-id="demo-explore-good-way"
+                  data-feed-source="EXPLORE"
+                  data-title="In a Good Way"
+                  data-artist="Faye Webster"
+                >
+                  <div class="swipe-card__art swipe-card__art--amber" aria-hidden="true">FW</div>
+                  <div class="swipe-card__body">
+                    <p class="swipe-card__kicker">Adjacent taste</p>
+                    <h3>In a Good Way</h3>
+                    <p class="swipe-card__artist">Faye Webster</p>
+                    <div class="swipe-card__tags" aria-label="Song traits">
+                      <span>Indie</span>
+                      <span>Warm</span>
+                      <span>Vocal</span>
+                    </div>
+                  </div>
+                  <div class="swipe-card__decision" aria-hidden="true">
+                    <span class="swipe-card__stamp swipe-card__stamp--no">NO</span>
+                    <span class="swipe-card__stamp swipe-card__stamp--yes">YES</span>
+                  </div>
+                </article>
+              </div>
+              <div class="swipe-actions" aria-label="Explore decision buttons">
+                <button type="button" class="btn btn-compact swipe-action swipe-action--no" data-swipe-action="NO">No</button>
+                <button type="button" class="btn btn-compact swipe-action swipe-action--yes" data-swipe-action="YES">Yes</button>
+              </div>
+              <p class="muted swipe-empty" data-swipe-empty hidden>No more Explore cards.</p>
+              <p class="sr-only" data-swipe-feedback aria-live="polite"></p>
+            </section>
           </div>
 
           <div class="tab-panel" role="tabpanel" id="panel-friends" aria-labelledby="tab-friends-btn" hidden>
