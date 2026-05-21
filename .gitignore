@@ -5,3 +5,4 @@ public/
 server/data/users.json
 .cursor/
 .claude/
+.SUPABASE_SETUP.md

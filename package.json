@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "concurrently \"vite\" \"tsx watch server/index.ts\"",
     "build": "vite build",
-    "start": "tsx server/index.ts"
+    "start": "tsx server/index.ts",
+    "db:new": "supabase migration new",
+    "db:push": "supabase db push"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
     "@vercel/analytics": "^2.0.1",
     "cookie-session": "^2.1.0",
     "dotenv": "^16.4.5",
@@ -29,6 +32,7 @@
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.0",
     "postcss": "^8.4.49",
+    "supabase": "^2.98.2",
     "tailwindcss": "^3.4.16",
     "typescript": "^5.7.2",
     "vite": "^6.0.0"
