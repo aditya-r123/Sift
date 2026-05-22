@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronRight, Search, UserPlus, UserMinus, Check, X } from 'lucide-react';
+import { Search, UserPlus, UserMinus, Check, X, Clock } from 'lucide-react';
 import { supabase } from '../supabase.js';
 
 type Profile = {
   id: string;
   display_name: string | null;
   avatar_url: string | null;
+};
+
+type FriendRow = {
+  id: string;
+  requester_id: string;
+  addressee_id: string;
+  status: 'pending' | 'accepted';
+  profile: Profile;
 };
 
 const AVATAR_PALETTE = ['#14b8a6', '#8b5cf6', '#f97316', '#ef4444', '#22c55e', '#3b82f6', '#eab308'];
@@ -28,52 +36,126 @@ function labelFor(profile: Profile): string {
   return (profile.display_name || '').trim() || 'Unnamed user';
 }
 
+function errorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === 'string') return e;
+  if (e && typeof e === 'object') {
+    const obj = e as Record<string, unknown>;
+    if (typeof obj.message === 'string' && obj.message) return obj.message;
+    if (typeof obj.details === 'string' && obj.details) return obj.details;
+    try {
+      return JSON.stringify(obj);
+    } catch {
+      // fall through
+    }
+  }
+  return 'Unknown error';
+}
+
+function Avatar({ profile, size = 'md' }: { profile: Profile; size?: 'sm' | 'md' }) {
+  const label = labelFor(profile);
+  const sizeClass = size === 'sm' ? 'w-10 h-10 text-sm' : 'w-12 h-12';
+  return (
+    <div
+      className={`${sizeClass} rounded-full flex items-center justify-center flex-shrink-0`}
+      style={{ backgroundColor: colorFor(profile.id) }}
+    >
+      <span className="text-white font-semibold">
+        {initialsFor(profile.display_name, label)}
+      </span>
+    </div>
+  );
+}
+
 export function ProfilePage() {
   const [meId, setMeId] = useState<string | null>(null);
-  const [friends, setFriends] = useState<Profile[]>([]);
-  const [friendsLoading, setFriendsLoading] = useState(true);
-  const [friendsError, setFriendsError] = useState<string | null>(null);
-  const [friendsFilter, setFriendsFilter] = useState('');
+  const [rows, setRows] = useState<FriendRow[]>([]);
+  const [rowsLoading, setRowsLoading] = useState(true);
+  const [rowsError, setRowsError] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Profile[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
+  const [friendsFilter, setFriendsFilter] = useState('');
   const [pending, setPending] = useState<Record<string, boolean>>({});
 
-  const friendIds = useMemo(() => new Set(friends.map((f) => f.id)), [friends]);
+  const incoming = useMemo(
+    () => rows.filter((r) => r.addressee_id === meId && r.status === 'pending'),
+    [rows, meId]
+  );
+  const sent = useMemo(
+    () => rows.filter((r) => r.requester_id === meId && r.status === 'pending'),
+    [rows, meId]
+  );
+  const accepted = useMemo(
+    () => rows.filter((r) => r.status === 'accepted'),
+    [rows]
+  );
 
-  const loadFriends = useCallback(async (userId: string) => {
-    setFriendsLoading(true);
-    setFriendsError(null);
+  const sentToIds = useMemo(() => new Set(sent.map((r) => r.addressee_id)), [sent]);
+  const friendIds = useMemo(() => new Set(accepted.map((r) => r.profile.id)), [accepted]);
+
+  const loadRows = useCallback(async (userId: string) => {
+    setRowsLoading(true);
+    setRowsError(null);
     try {
-      const { data: rows, error: rowsError } = await supabase
+      const { data: friendRows, error: friendsError } = await supabase
         .from('friends')
-        .select('friend_id, created_at')
-        .eq('user_id', userId)
+        .select('id, requester_id, addressee_id, status')
+        .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
         .order('created_at', { ascending: false });
-      if (rowsError) throw rowsError;
-      const ids = (rows ?? []).map((r) => r.friend_id as string);
-      if (ids.length === 0) {
-        setFriends([]);
+      if (friendsError) throw friendsError;
+
+      const baseRows = (friendRows ?? []) as Array<{
+        id: string;
+        requester_id: string;
+        addressee_id: string;
+        status: 'pending' | 'accepted';
+      }>;
+
+      if (baseRows.length === 0) {
+        setRows([]);
         return;
       }
-      const { data: profiles, error: profilesError } = await supabase
+
+      const counterpartyIds = Array.from(
+        new Set(
+          baseRows.map((r) => (r.requester_id === userId ? r.addressee_id : r.requester_id))
+        )
+      );
+
+      const { data: profileRows, error: profilesError } = await supabase
         .from('profiles')
         .select('id, display_name, avatar_url')
-        .in('id', ids);
+        .in('id', counterpartyIds);
       if (profilesError) throw profilesError;
-      const byId = new Map<string, Profile>();
-      for (const p of profiles ?? []) byId.set(p.id as string, p as Profile);
-      const ordered = ids
-        .map((id) => byId.get(id))
-        .filter((p): p is Profile => Boolean(p));
-      setFriends(ordered);
+
+      const profileById = new Map<string, Profile>(
+        ((profileRows ?? []) as Profile[]).map((p) => [p.id, p])
+      );
+
+      const shaped: FriendRow[] = baseRows.map((row) => {
+        const otherId = row.requester_id === userId ? row.addressee_id : row.requester_id;
+        const profile = profileById.get(otherId) ?? {
+          id: otherId,
+          display_name: null,
+          avatar_url: null,
+        };
+        return {
+          id: row.id,
+          requester_id: row.requester_id,
+          addressee_id: row.addressee_id,
+          status: row.status,
+          profile,
+        };
+      });
+      setRows(shaped);
     } catch (e) {
-      setFriendsError(e instanceof Error ? e.message : String(e));
+      setRowsError(errorMessage(e));
     } finally {
-      setFriendsLoading(false);
+      setRowsLoading(false);
     }
   }, []);
 
@@ -83,23 +165,23 @@ export function ProfilePage() {
       if (cancelled) return;
       const id = data.session?.user.id ?? null;
       setMeId(id);
-      if (id) void loadFriends(id);
-      else setFriendsLoading(false);
+      if (id) void loadRows(id);
+      else setRowsLoading(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       const id = session?.user.id ?? null;
       setMeId(id);
-      if (id) void loadFriends(id);
+      if (id) void loadRows(id);
       else {
-        setFriends([]);
-        setFriendsLoading(false);
+        setRows([]);
+        setRowsLoading(false);
       }
     });
     return () => {
       cancelled = true;
       sub.subscription.unsubscribe();
     };
-  }, [loadFriends]);
+  }, [loadRows]);
 
   useEffect(() => {
     const query = searchQuery.trim();
@@ -124,7 +206,7 @@ export function ProfilePage() {
         if (error) throw error;
         setSearchResults((data ?? []) as Profile[]);
       } catch (e) {
-        setSearchError(e instanceof Error ? e.message : String(e));
+        setSearchError(errorMessage(e));
         setSearchResults([]);
       } finally {
         setSearching(false);
@@ -133,24 +215,33 @@ export function ProfilePage() {
     return () => clearTimeout(handle);
   }, [searchQuery, meId]);
 
-  const addFriend = useCallback(
-    async (friend: Profile) => {
-      if (!meId || pending[friend.id]) return;
-      setPending((p) => ({ ...p, [friend.id]: true }));
+  const sendRequest = useCallback(
+    async (target: Profile) => {
+      if (!meId || pending[target.id]) return;
+      setPending((p) => ({ ...p, [target.id]: true }));
       try {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('friends')
-          .insert({ user_id: meId, friend_id: friend.id });
+          .insert({ requester_id: meId, addressee_id: target.id })
+          .select('id, requester_id, addressee_id, status')
+          .single();
         if (error && !/duplicate key/i.test(error.message)) throw error;
-        setFriends((prev) =>
-          prev.some((p) => p.id === friend.id) ? prev : [friend, ...prev]
-        );
+        if (data) {
+          const newRow: FriendRow = {
+            id: (data as Record<string, unknown>).id as string,
+            requester_id: meId,
+            addressee_id: target.id,
+            status: 'pending',
+            profile: target,
+          };
+          setRows((prev) => [newRow, ...prev]);
+        }
       } catch (e) {
-        setSearchError(e instanceof Error ? e.message : String(e));
+        setSearchError(errorMessage(e));
       } finally {
         setPending((p) => {
           const next = { ...p };
-          delete next[friend.id];
+          delete next[target.id];
           return next;
         });
       }
@@ -158,43 +249,68 @@ export function ProfilePage() {
     [meId, pending]
   );
 
-  const removeFriend = useCallback(
-    async (friend: Profile) => {
-      if (!meId || pending[friend.id]) return;
-      setPending((p) => ({ ...p, [friend.id]: true }));
+  const acceptRequest = useCallback(
+    async (row: FriendRow) => {
+      if (pending[row.id]) return;
+      setPending((p) => ({ ...p, [row.id]: true }));
+      try {
+        const { error } = await supabase
+          .from('friends')
+          .update({ status: 'accepted' })
+          .eq('id', row.id);
+        if (error) throw error;
+        setRows((prev) =>
+          prev.map((r) => (r.id === row.id ? { ...r, status: 'accepted' } : r))
+        );
+      } catch (e) {
+        setRowsError(errorMessage(e));
+      } finally {
+        setPending((p) => {
+          const next = { ...p };
+          delete next[row.id];
+          return next;
+        });
+      }
+    },
+    [pending]
+  );
+
+  const deleteRow = useCallback(
+    async (row: FriendRow) => {
+      if (pending[row.id]) return;
+      setPending((p) => ({ ...p, [row.id]: true }));
       try {
         const { error } = await supabase
           .from('friends')
           .delete()
-          .eq('user_id', meId)
-          .eq('friend_id', friend.id);
+          .eq('id', row.id);
         if (error) throw error;
-        setFriends((prev) => prev.filter((p) => p.id !== friend.id));
+        setRows((prev) => prev.filter((r) => r.id !== row.id));
       } catch (e) {
-        setFriendsError(e instanceof Error ? e.message : String(e));
+        setRowsError(errorMessage(e));
       } finally {
         setPending((p) => {
           const next = { ...p };
-          delete next[friend.id];
+          delete next[row.id];
           return next;
         });
       }
     },
-    [meId, pending]
+    [pending]
   );
 
   const filteredFriends = useMemo(() => {
     const q = friendsFilter.trim().toLowerCase();
-    if (!q) return friends;
-    return friends.filter((f) => labelFor(f).toLowerCase().includes(q));
-  }, [friends, friendsFilter]);
+    if (!q) return accepted;
+    return accepted.filter((r) => labelFor(r.profile).toLowerCase().includes(q));
+  }, [accepted, friendsFilter]);
 
   if (!meId) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] px-6 py-8">
         <div className="max-w-2xl mx-auto">
           <h1 className="text-3xl font-bold text-white mb-2">Friends</h1>
-          <p className="text-gray-400">Sign in to find and follow other Sift users.</p>
+          <p className="text-gray-400">Sign in to find and connect with other Sift users.</p>
         </div>
       </div>
     );
@@ -205,9 +321,12 @@ export function ProfilePage() {
       <div className="max-w-2xl mx-auto">
         <h1 className="text-3xl font-bold text-white mb-2">Friends</h1>
         <p className="text-gray-400 mb-6">
-          Find people on Sift by name, add them to your friends list, and remove them anytime.
+          Search for people on Sift, send a friend request, and accept theirs.
         </p>
 
+        {rowsError && <p className="text-sm text-red-400 mb-4">{rowsError}</p>}
+
+        {/* find people */}
         <section className="mb-8">
           <h2 className="text-xs text-gray-500 uppercase tracking-wider mb-3">Find people</h2>
           <div className="relative mb-3">
@@ -220,50 +339,43 @@ export function ProfilePage() {
               className="w-full bg-[#1a1a1a] text-white placeholder-gray-500 rounded-2xl pl-11 pr-4 py-3 outline-none border border-transparent focus:border-[#2a2a2a]"
             />
           </div>
-          {searchError && (
-            <p className="text-sm text-red-400 mb-3">{searchError}</p>
-          )}
+          {searchError && <p className="text-sm text-red-400 mb-3">{searchError}</p>}
           {searchQuery.trim().length === 0 ? (
             <p className="text-gray-500 text-sm">Start typing to search every Sift user.</p>
           ) : searching ? (
             <p className="text-gray-500 text-sm">Searching…</p>
           ) : searchResults.length === 0 ? (
-            <p className="text-gray-500 text-sm">No users match “{searchQuery.trim()}”.</p>
+            <p className="text-gray-500 text-sm">No users match "{searchQuery.trim()}".</p>
           ) : (
             <ul className="space-y-2">
               {searchResults.map((p) => {
-                const already = friendIds.has(p.id);
+                const isFriend = friendIds.has(p.id);
+                const hasPending = sentToIds.has(p.id);
                 const busy = !!pending[p.id];
                 const label = labelFor(p);
                 return (
-                  <li
-                    key={p.id}
-                    className="bg-[#1a1a1a] rounded-2xl p-3 flex items-center gap-4"
-                  >
-                    <div
-                      className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: colorFor(p.id) }}
-                    >
-                      <span className="text-white text-sm font-semibold">
-                        {initialsFor(p.display_name, label)}
-                      </span>
-                    </div>
+                  <li key={p.id} className="bg-[#1a1a1a] rounded-2xl p-3 flex items-center gap-4">
+                    <Avatar profile={p} size="sm" />
                     <div className="flex-1 min-w-0">
                       <h3 className="text-white font-medium truncate">{label}</h3>
                     </div>
-                    {already ? (
+                    {isFriend ? (
                       <span className="inline-flex items-center gap-1 text-teal-400 text-xs px-3 py-1.5 bg-[#2a2a2a] rounded-full">
                         <Check className="w-3.5 h-3.5" /> Friends
+                      </span>
+                    ) : hasPending ? (
+                      <span className="inline-flex items-center gap-1 text-gray-400 text-xs px-3 py-1.5 bg-[#2a2a2a] rounded-full">
+                        <Clock className="w-3.5 h-3.5" /> Pending
                       </span>
                     ) : (
                       <button
                         type="button"
-                        onClick={() => void addFriend(p)}
+                        onClick={() => void sendRequest(p)}
                         disabled={busy}
-                        className="inline-flex items-center gap-1 text-white text-xs px-3 py-1.5 bg-[#2a2a2a] hover:bg-[#333] rounded-full disabled:opacity-50"
+                        className="inline-flex items-center gap-1 text-white text-xs px-3 py-1.5 bg-[#2a2a2a] hover:bg-[#333] rounded-full disabled:opacity-50 transition-colors"
                       >
                         <UserPlus className="w-3.5 h-3.5" />
-                        {busy ? 'Adding…' : 'Add'}
+                        {busy ? 'Sending…' : 'Add'}
                       </button>
                     )}
                   </li>
@@ -273,10 +385,88 @@ export function ProfilePage() {
           )}
         </section>
 
+        {/* incoming requests */}
+        {incoming.length > 0 && (
+          <section className="mb-8">
+            <h2 className="text-xs text-gray-500 uppercase tracking-wider mb-3">
+              Requests ({incoming.length})
+            </h2>
+            <ul className="space-y-2">
+              {incoming.map((row) => {
+                const busy = !!pending[row.id];
+                const label = labelFor(row.profile);
+                return (
+                  <li key={row.id} className="bg-[#1a1a1a] rounded-2xl p-3 flex items-center gap-4">
+                    <Avatar profile={row.profile} size="sm" />
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-medium truncate">{label}</h3>
+                      <p className="text-gray-500 text-xs mt-0.5">Wants to be friends</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void acceptRequest(row)}
+                        disabled={busy}
+                        className="inline-flex items-center gap-1 text-teal-400 text-xs px-3 py-1.5 bg-[#2a2a2a] hover:bg-[#333] rounded-full disabled:opacity-50 transition-colors"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        {busy ? '…' : 'Accept'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void deleteRow(row)}
+                        disabled={busy}
+                        className="inline-flex items-center gap-1 text-gray-400 hover:text-white text-xs px-3 py-1.5 bg-[#2a2a2a] hover:bg-[#3a2a2a] rounded-full disabled:opacity-50 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Decline
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
+        {/* sent requests */}
+        {sent.length > 0 && (
+          <section className="mb-8">
+            <h2 className="text-xs text-gray-500 uppercase tracking-wider mb-3">
+              Sent ({sent.length})
+            </h2>
+            <ul className="space-y-2">
+              {sent.map((row) => {
+                const busy = !!pending[row.id];
+                const label = labelFor(row.profile);
+                return (
+                  <li key={row.id} className="bg-[#1a1a1a] rounded-2xl p-3 flex items-center gap-4">
+                    <Avatar profile={row.profile} size="sm" />
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-medium truncate">{label}</h3>
+                      <p className="text-gray-500 text-xs mt-0.5">Request pending</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void deleteRow(row)}
+                      disabled={busy}
+                      className="inline-flex items-center gap-1 text-gray-400 hover:text-white text-xs px-3 py-1.5 bg-[#2a2a2a] hover:bg-[#3a2a2a] rounded-full disabled:opacity-50 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      {busy ? 'Cancelling…' : 'Cancel'}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
+        {/* friends list */}
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-xs text-gray-500 uppercase tracking-wider">
-              Your friends {friends.length > 0 ? `(${friends.length})` : ''}
+              Your friends {accepted.length > 0 ? `(${accepted.length})` : ''}
             </h2>
           </div>
           <div className="relative mb-3">
@@ -290,50 +480,36 @@ export function ProfilePage() {
             />
           </div>
 
-          {friendsError && (
-            <p className="text-sm text-red-400 mb-3">{friendsError}</p>
-          )}
-
-          {friendsLoading ? (
+          {rowsLoading ? (
             <p className="text-gray-500 text-sm">Loading…</p>
-          ) : friends.length === 0 ? (
+          ) : accepted.length === 0 ? (
             <p className="text-gray-500 text-sm">
-              No friends yet. Search above to add the first one.
+              No friends yet. Search above to send the first request.
             </p>
           ) : filteredFriends.length === 0 ? (
             <p className="text-gray-500 text-sm">
-              None of your friends match “{friendsFilter.trim()}”.
+              None of your friends match "{friendsFilter.trim()}".
             </p>
           ) : (
-            <div
-              className="space-y-3 overflow-y-auto pr-1"
-              style={{ maxHeight: '60vh' }}
-            >
-              {filteredFriends.map((friend) => {
-                const busy = !!pending[friend.id];
-                const label = labelFor(friend);
+            <div className="space-y-3 overflow-y-auto pr-1" style={{ maxHeight: '60vh' }}>
+              {filteredFriends.map((row) => {
+                const busy = !!pending[row.id];
+                const label = labelFor(row.profile);
                 return (
                   <div
-                    key={friend.id}
+                    key={row.id}
                     className="bg-[#1a1a1a] rounded-2xl p-4 flex items-center gap-4 hover:bg-[#222] transition-colors"
                   >
-                    <div
-                      className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: colorFor(friend.id) }}
-                    >
-                      <span className="text-white font-semibold">
-                        {initialsFor(friend.display_name, label)}
-                      </span>
-                    </div>
+                    <Avatar profile={row.profile} />
                     <div className="flex-1 min-w-0">
                       <h3 className="text-white font-medium truncate">{label}</h3>
                     </div>
                     <button
                       type="button"
-                      onClick={() => void removeFriend(friend)}
+                      onClick={() => void deleteRow(row)}
                       disabled={busy}
-                      className="inline-flex items-center gap-1 text-gray-300 hover:text-white text-xs px-3 py-1.5 bg-[#2a2a2a] hover:bg-[#3a2a2a] rounded-full disabled:opacity-50"
-                      aria-label={`Remove ${label}`}
+                      className="inline-flex items-center gap-1 text-gray-300 hover:text-white text-xs px-3 py-1.5 bg-[#2a2a2a] hover:bg-[#3a2a2a] rounded-full disabled:opacity-50 transition-colors"
+                      aria-label={`Unfriend ${label}`}
                     >
                       {busy ? (
                         <>
@@ -341,11 +517,10 @@ export function ProfilePage() {
                         </>
                       ) : (
                         <>
-                          <UserMinus className="w-3.5 h-3.5" /> Remove
+                          <UserMinus className="w-3.5 h-3.5" /> Unfriend
                         </>
                       )}
                     </button>
-                    <ChevronRight className="w-5 h-5 text-gray-600 hidden sm:block" />
                   </div>
                 );
               })}
