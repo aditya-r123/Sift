@@ -36,6 +36,22 @@ function labelFor(profile: Profile): string {
   return (profile.display_name || '').trim() || 'Unnamed user';
 }
 
+function errorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === 'string') return e;
+  if (e && typeof e === 'object') {
+    const obj = e as Record<string, unknown>;
+    if (typeof obj.message === 'string' && obj.message) return obj.message;
+    if (typeof obj.details === 'string' && obj.details) return obj.details;
+    try {
+      return JSON.stringify(obj);
+    } catch {
+      // fall through
+    }
+  }
+  return 'Unknown error';
+}
+
 function Avatar({ profile, size = 'md' }: { profile: Profile; size?: 'sm' | 'md' }) {
   const label = labelFor(profile);
   const sizeClass = size === 'sm' ? 'w-10 h-10 text-sm' : 'w-12 h-12';
@@ -85,29 +101,59 @@ export function ProfilePage() {
     setRowsLoading(true);
     setRowsError(null);
     try {
-      const { data, error } = await supabase
+      const { data: friendRows, error: friendsError } = await supabase
         .from('friends')
-        .select('id, requester_id, addressee_id, status, profiles!requester_id(id, display_name, avatar_url), profiles!addressee_id(id, display_name, avatar_url)')
+        .select('id, requester_id, addressee_id, status')
         .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
         .order('created_at', { ascending: false });
-      if (error) throw error;
+      if (friendsError) throw friendsError;
 
-      const shaped: FriendRow[] = (data ?? []).map((row: Record<string, unknown>) => {
-        const isRequester = (row.requester_id as string) === userId;
-        const otherProfile = isRequester
-          ? (row['profiles!addressee_id'] as Profile)
-          : (row['profiles!requester_id'] as Profile);
+      const baseRows = (friendRows ?? []) as Array<{
+        id: string;
+        requester_id: string;
+        addressee_id: string;
+        status: 'pending' | 'accepted';
+      }>;
+
+      if (baseRows.length === 0) {
+        setRows([]);
+        return;
+      }
+
+      const counterpartyIds = Array.from(
+        new Set(
+          baseRows.map((r) => (r.requester_id === userId ? r.addressee_id : r.requester_id))
+        )
+      );
+
+      const { data: profileRows, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, display_name, avatar_url')
+        .in('id', counterpartyIds);
+      if (profilesError) throw profilesError;
+
+      const profileById = new Map<string, Profile>(
+        ((profileRows ?? []) as Profile[]).map((p) => [p.id, p])
+      );
+
+      const shaped: FriendRow[] = baseRows.map((row) => {
+        const otherId = row.requester_id === userId ? row.addressee_id : row.requester_id;
+        const profile = profileById.get(otherId) ?? {
+          id: otherId,
+          display_name: null,
+          avatar_url: null,
+        };
         return {
-          id: row.id as string,
-          requester_id: row.requester_id as string,
-          addressee_id: row.addressee_id as string,
-          status: row.status as 'pending' | 'accepted',
-          profile: otherProfile,
+          id: row.id,
+          requester_id: row.requester_id,
+          addressee_id: row.addressee_id,
+          status: row.status,
+          profile,
         };
       });
       setRows(shaped);
     } catch (e) {
-      setRowsError(e instanceof Error ? e.message : String(e));
+      setRowsError(errorMessage(e));
     } finally {
       setRowsLoading(false);
     }
@@ -160,7 +206,7 @@ export function ProfilePage() {
         if (error) throw error;
         setSearchResults((data ?? []) as Profile[]);
       } catch (e) {
-        setSearchError(e instanceof Error ? e.message : String(e));
+        setSearchError(errorMessage(e));
         setSearchResults([]);
       } finally {
         setSearching(false);
@@ -191,7 +237,7 @@ export function ProfilePage() {
           setRows((prev) => [newRow, ...prev]);
         }
       } catch (e) {
-        setSearchError(e instanceof Error ? e.message : String(e));
+        setSearchError(errorMessage(e));
       } finally {
         setPending((p) => {
           const next = { ...p };
@@ -217,7 +263,7 @@ export function ProfilePage() {
           prev.map((r) => (r.id === row.id ? { ...r, status: 'accepted' } : r))
         );
       } catch (e) {
-        setRowsError(e instanceof Error ? e.message : String(e));
+        setRowsError(errorMessage(e));
       } finally {
         setPending((p) => {
           const next = { ...p };
@@ -241,7 +287,7 @@ export function ProfilePage() {
         if (error) throw error;
         setRows((prev) => prev.filter((r) => r.id !== row.id));
       } catch (e) {
-        setRowsError(e instanceof Error ? e.message : String(e));
+        setRowsError(errorMessage(e));
       } finally {
         setPending((p) => {
           const next = { ...p };
