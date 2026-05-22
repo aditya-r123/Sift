@@ -1,86 +1,190 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useTransform, PanInfo } from 'motion/react';
 import { X, Heart } from 'lucide-react';
-import albumCover from './imports/like_dat.png';
+import { supabase } from '../supabase.js';
+import { songs, type Song } from '../songs.js';
 
-interface Song {
-  id: string;
-  title: string;
-  artist: string;
-  tags: string[];
-  color: string;
+const BATCH_SIZE = 5;
+
+function pickNextBatch(
+  seenIds: Set<string>,
+  tagScores: Record<string, number>
+): Song[] {
+  const unseen = songs.filter((s) => !seenIds.has(s.id));
+  if (unseen.length === 0) return [];
+
+  const scored = unseen.map((s) => ({
+    song: s,
+    score: s.tags.reduce((sum, tag) => sum + (tagScores[tag] ?? 0), 0),
+  }));
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, BATCH_SIZE).map((s) => s.song);
 }
 
-const initialSongs: Song[] = [
-  {
-    id: '1',
-    title: 'Like Dat',
-    artist: 'Kodak Black',
-    tags: ['On Repeat', 'Energy', 'Danceability', 'BPM'],
-    color: '#ef4444',
-  },
-  {
-    id: '2',
-    title: 'Digits',
-    artist: 'Young Thug',
-    tags: ['Energy', 'BPM', 'Hip-Hop'],
-    color: '#14b8a6',
-  },
-  {
-    id: '3',
-    title: 'Magnolia',
-    artist: 'Playboi Carti',
-    tags: ['Hip-Hop', 'BPM', 'Energy', 'Danceability'],
-    color: '#f97316',
-  },
-  {
-    id: '4',
-    title: '10 Purple Summers',
-    artist: '03 Greedo',
-    tags: ['Hip-Hop', 'BPM', 'Energy', 'Danceability'],
-    color: '#8b5cf6',
-  },
-  {
-    id: '5',
-    title: 'Boss My Life Up',
-    artist: 'Kodak Black',
-    tags: ['Hip-Hop', 'BPM', 'Energy', 'Danceability'],
-    color: '#14b8a6',
-  },
-];
-
 export function DiscoverPage() {
-  const [songs, setSongs] = useState(initialSongs);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [meId, setMeId] = useState<string | null>(null);
+  const [currentBatch, setCurrentBatch] = useState<Song[]>([]);
+  const [batchSwipes, setBatchSwipes] = useState<Record<string, 'left' | 'right'>>({});
+  const [tagScores, setTagScores] = useState<Record<string, number>>({});
+  const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
 
-  const removeCard = (direction: 'left' | 'right') => {
-    if (currentIndex < songs.length) {
-      setCurrentIndex(currentIndex + 1);
+  // ref so recordSwipe always sees the latest state without stale closures
+  const stateRef = useRef({ seenIds, tagScores, batchSwipes, currentBatch });
+  stateRef.current = { seenIds, tagScores, batchSwipes, currentBatch };
+
+  const startBatch = useCallback(
+    (seen: Set<string>, scores: Record<string, number>) => {
+      const batch = pickNextBatch(seen, scores);
+      setCurrentBatch(batch);
+      setBatchSwipes({});
+    },
+    []
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function init(userId: string | null) {
+      if (!userId) {
+        setLoading(false);
+        startBatch(new Set(), {});
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('swipes')
+          .select('song_id, direction')
+          .eq('user_id', userId);
+        if (error) throw error;
+
+        const seen = new Set<string>();
+        const scores: Record<string, number> = {};
+
+        for (const row of data ?? []) {
+          seen.add(row.song_id as string);
+          const song = songs.find((s) => s.id === row.song_id);
+          if (song) {
+            const delta = row.direction === 'right' ? 1 : -0.5;
+            for (const tag of song.tags) {
+              scores[tag] = (scores[tag] ?? 0) + delta;
+            }
+          }
+        }
+
+        if (!cancelled) {
+          setSeenIds(seen);
+          setTagScores(scores);
+          startBatch(seen, scores);
+        }
+      } catch {
+        // swipe history unavailable — just start fresh
+        if (!cancelled) startBatch(new Set(), {});
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-  };
 
-  const visibleCards = songs.slice(currentIndex, currentIndex + 3);
+    supabase.auth.getSession().then(({ data }) => {
+      if (cancelled) return;
+      const id = data.session?.user.id ?? null;
+      setMeId(id);
+      void init(id);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const id = session?.user.id ?? null;
+      setMeId(id);
+    });
+
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, [startBatch]);
+
+  const recordSwipe = useCallback(
+    async (song: Song, direction: 'left' | 'right') => {
+      const { seenIds: currentSeen, tagScores: currentScores, batchSwipes: currentBatch, currentBatch: batch } =
+        stateRef.current;
+
+      const nextSeen = new Set(currentSeen);
+      nextSeen.add(song.id);
+
+      const delta = direction === 'right' ? 1 : -0.5;
+      const nextScores = { ...currentScores };
+      for (const tag of song.tags) {
+        nextScores[tag] = (nextScores[tag] ?? 0) + delta;
+      }
+
+      const nextBatchSwipes = { ...currentBatch, [song.id]: direction };
+
+      setSeenIds(nextSeen);
+      setTagScores(nextScores);
+      setBatchSwipes(nextBatchSwipes);
+
+      const userId = meId;
+      if (userId) {
+        supabase
+          .from('swipes')
+          .upsert({ user_id: userId, song_id: song.id, direction })
+          .then(({ error }) => {
+            if (error) console.warn('Failed to save swipe:', error.message);
+          });
+      }
+
+      if (Object.keys(nextBatchSwipes).length >= batch.length) {
+        startBatch(nextSeen, nextScores);
+      }
+    },
+    [meId, startBatch]
+  );
+
+  const [topIndex, setTopIndex] = useState(0);
+
+  useEffect(() => {
+    setTopIndex(0);
+  }, [currentBatch]);
+
+  const handleSwipe = useCallback(
+    (song: Song, direction: 'left' | 'right') => {
+      setTopIndex((i) => i + 1);
+      void recordSwipe(song, direction);
+    },
+    [recordSwipe]
+  );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <p className="text-gray-500">Loading…</p>
+      </div>
+    );
+  }
+
+  const visibleCards = currentBatch.slice(topIndex, topIndex + 3);
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
       <div className="w-full max-w-lg px-6 -mt-8">
         <h1 className="text-3xl font-bold text-white mb-8">Discover</h1>
         <div className="h-[520px] relative">
-            {visibleCards.length === 0 ? (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <p className="text-gray-500 text-lg">No more songs to discover!</p>
-              </div>
-            ) : (
-              visibleCards.map((song, index) => (
-                <SwipeCard
-                  key={song.id}
-                  song={song}
-                  index={index}
-                  onSwipe={removeCard}
-                  isTop={index === 0}
-                />
-              ))
-            )}
+          {visibleCards.length === 0 ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <p className="text-gray-500 text-lg">You've heard it all!</p>
+            </div>
+          ) : (
+            visibleCards.map((song, index) => (
+              <SwipeCard
+                key={song.id}
+                song={song}
+                index={index}
+                isTop={index === 0}
+                onSwipe={(direction) => handleSwipe(song, direction)}
+              />
+            ))
+          )}
         </div>
       </div>
     </div>
@@ -90,19 +194,19 @@ export function DiscoverPage() {
 function SwipeCard({
   song,
   index,
-  onSwipe,
   isTop,
+  onSwipe,
 }: {
   song: Song;
   index: number;
-  onSwipe: (direction: 'left' | 'right') => void;
   isTop: boolean;
+  onSwipe: (direction: 'left' | 'right') => void;
 }) {
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-200, 200], [-25, 25]);
   const opacity = useTransform(x, [-200, -100, 0, 100, 200], [0, 1, 1, 1, 0]);
 
-  const handleDragEnd = (event: PointerEvent, info: PanInfo) => {
+  const handleDragEnd = (_event: PointerEvent, info: PanInfo) => {
     if (Math.abs(info.offset.x) > 100) {
       onSwipe(info.offset.x > 0 ? 'right' : 'left');
     }
@@ -130,9 +234,9 @@ function SwipeCard({
         <div>
           {song.tags.length > 0 && (
             <div className="flex gap-2 mb-4 flex-wrap">
-              {song.tags.map((tag, idx) => (
+              {song.tags.map((tag) => (
                 <span
-                  key={idx}
+                  key={tag}
                   className="text-xs text-gray-400 px-3 py-1.5 bg-[#2a2a2a] rounded-full"
                 >
                   {tag}
@@ -140,22 +244,12 @@ function SwipeCard({
               ))}
             </div>
           )}
-
-          <div className="flex items-center gap-2 mb-4">
-            <div
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: song.color }}
-            />
-            <span className="text-xs text-gray-500 uppercase tracking-wide">
-              ALEX LIKED THIS
-            </span>
-          </div>
         </div>
 
         <div className="flex-1 flex items-center justify-center">
-          {song.id === '1' ? (
+          {song.coverImage ? (
             <img
-              src={albumCover}
+              src={song.coverImage}
               alt={`${song.title} cover`}
               className="w-64 h-64 rounded-3xl shadow-lg object-cover"
             />
@@ -173,6 +267,27 @@ function SwipeCard({
           <h3 className="text-white font-bold text-3xl mb-2">{song.title}</h3>
           <p className="text-gray-400 text-lg">{song.artist}</p>
         </div>
+
+        {isTop && (
+          <div className="flex justify-center gap-6 mt-6">
+            <button
+              type="button"
+              onClick={() => onSwipe('left')}
+              className="w-14 h-14 rounded-full bg-[#2a2a2a] hover:bg-[#333] flex items-center justify-center transition-colors"
+              aria-label="Pass"
+            >
+              <X className="w-6 h-6 text-gray-300" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onSwipe('right')}
+              className="w-14 h-14 rounded-full bg-[#2a2a2a] hover:bg-[#333] flex items-center justify-center transition-colors"
+              aria-label="Like"
+            >
+              <Heart className="w-6 h-6 text-teal-400" />
+            </button>
+          </div>
+        )}
       </div>
     </motion.div>
   );
