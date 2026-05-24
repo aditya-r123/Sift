@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, useMotionValue, useTransform, PanInfo } from 'motion/react';
+import { supabase } from '../supabase.js';
 import albumCover from './imports/seasons.png';
 
 interface Song {
@@ -51,10 +52,33 @@ const initialSongs: Song[] = [
 export function ExplorePage() {
   const [songs, setSongs] = useState(initialSongs);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [meId, setMeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setMeId(data.session?.user.id ?? null);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setMeId(session?.user.id ?? null);
+    });
+
+    return () => sub.subscription.unsubscribe();
+  }, []);
 
   const removeCard = (direction: 'left' | 'right') => {
     if (currentIndex < songs.length) {
+      const song = songs[currentIndex];
       setCurrentIndex(currentIndex + 1);
+
+      if (meId) {
+        supabase
+          .from('swipes')
+          .upsert({ user_id: meId, song_id: song.id, direction })
+          .then(({ error }) => {
+            if (error) console.warn('Failed to save swipe:', error.message);
+          });
+      }
     }
   };
 
