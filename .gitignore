@@ -2,6 +2,7 @@ node_modules/
 dist/
 public/
 .env
+.tokens.json
 server/data/users.json
 .cursor/
 .claude/
