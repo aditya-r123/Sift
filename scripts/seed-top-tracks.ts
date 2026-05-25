@@ -1,134 +1,161 @@
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
+import { readFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.join(__dirname, "..", ".env") });
+const repoRoot = path.join(__dirname, "..");
+dotenv.config({ path: path.join(repoRoot, ".env") });
 
-const SPOTIFY_CLIENT_ID = (process.env.SPOTIFY_CLIENT_ID ?? "").trim();
-const SPOTIFY_CLIENT_SECRET = (process.env.SPOTIFY_CLIENT_SECRET ?? "").trim();
-const RAPIDAPI_KEY = (process.env.RAPIDAPI_KEY ?? "").trim();
-const RAPIDAPI_HOST = (process.env.RAPIDAPI_HOST ?? "spotify-extended-audio-features-api.p.rapidapi.com").trim();
-const RAPIDAPI_FEATURES_PATH = (process.env.RAPIDAPI_FEATURES_PATH ?? "v1/audio-features").trim().replace(/^\/+|\/+$/g, "");
 const SUPABASE_URL = (process.env.VITE_SUPABASE_URL ?? "").trim();
 const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
+if (!SUPABASE_URL) throw new Error("Missing env: VITE_SUPABASE_URL");
+if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing env: SUPABASE_SERVICE_ROLE_KEY");
 
-// Default: Spotify "Top 50 - Global" editorial chart. Override with `npm run seed:top-tracks -- <playlistId>`.
-const DEFAULT_PLAYLIST_ID = "37i9dQZEVXbMDoHDwVN2tF";
-const playlistId = (process.argv[2] ?? DEFAULT_PLAYLIST_ID).trim();
-const HOW_MANY = 20;
+// Usage: npm run seed:top-tracks -- [path/to/playlist.csv]
+const DEFAULT_CSV = path.join(os.homedir(), "Downloads", "Top_500_Most_Streamed_Songs_on_Spotify.csv");
+const csvPath = (process.argv[2] ?? DEFAULT_CSV).trim();
 
-function requireEnv(name: string, value: string) {
-  if (!value) throw new Error(`Missing env: ${name}`);
-}
-requireEnv("SPOTIFY_CLIENT_ID", SPOTIFY_CLIENT_ID);
-requireEnv("SPOTIFY_CLIENT_SECRET", SPOTIFY_CLIENT_SECRET);
-requireEnv("RAPIDAPI_KEY", RAPIDAPI_KEY);
-requireEnv("VITE_SUPABASE_URL", SUPABASE_URL);
-requireEnv("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_SERVICE_ROLE_KEY);
-
-type PlaylistTrack = {
-  id: string;
-  name: string;
-  duration_ms: number;
-  artists: { name: string }[];
-  album: { name: string; release_date: string };
-};
-type PlaylistResponse = { items: { track: PlaylistTrack | null }[] };
-type AudioFeatures = {
-  energy?: number;
-  danceability?: number;
-  valence?: number;
-  acousticness?: number;
-  speechiness?: number;
-};
-
-async function getSpotifyAppToken(): Promise<string> {
-  const basic = Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString("base64");
-  const res = await fetch("https://accounts.spotify.com/api/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${basic}`,
-    },
-    body: "grant_type=client_credentials",
-  });
-  const json = (await res.json()) as { access_token?: string; error?: string };
-  if (!res.ok || !json.access_token) throw new Error(`Spotify token failed: ${json.error ?? res.statusText}`);
-  return json.access_token;
-}
-
-async function getTopTracks(token: string, id: string, limit: number): Promise<PlaylistTrack[]> {
-  const url = `https://api.spotify.com/v1/playlists/${encodeURIComponent(id)}/tracks?limit=${limit}&fields=items(track(id,name,duration_ms,artists(name),album(name,release_date)))`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Spotify playlist fetch failed (${res.status}): ${body.slice(0, 200)}`);
+function parseCsv(text: string): string[][] {
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1); // strip BOM
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ",") {
+      row.push(field);
+      field = "";
+    } else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else {
+      field += c;
+    }
   }
-  const json = (await res.json()) as PlaylistResponse;
-  return json.items.map((i) => i.track).filter((t): t is PlaylistTrack => !!t && !!t.id);
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows;
 }
 
-async function getAudioFeatures(trackId: string): Promise<AudioFeatures> {
-  const url = `https://${RAPIDAPI_HOST}/${RAPIDAPI_FEATURES_PATH}/${encodeURIComponent(trackId)}`;
-  const res = await fetch(url, {
-    headers: { "X-RapidAPI-Key": RAPIDAPI_KEY, "X-RapidAPI-Host": RAPIDAPI_HOST },
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`RapidAPI ${res.status} for ${trackId}: ${text.slice(0, 200)}`);
-  const parsed = JSON.parse(text) as AudioFeatures & { data?: AudioFeatures };
-  return parsed.data ?? parsed;
-}
-
-function yearFromReleaseDate(d: string | undefined): number | null {
-  if (!d) return null;
+function yearFromDate(d: string): number | null {
   const y = parseInt(d.slice(0, 4), 10);
   return Number.isFinite(y) ? y : null;
 }
 
-async function main() {
-  console.log(`Fetching top ${HOW_MANY} tracks from playlist ${playlistId}…`);
-  const token = await getSpotifyAppToken();
-  const tracks = (await getTopTracks(token, playlistId, HOW_MANY)).slice(0, HOW_MANY);
-  console.log(`Got ${tracks.length} tracks. Fetching audio features (1 RapidAPI request per track)…`);
+function toFloatOrNull(s: string): number | null {
+  if (!s) return null;
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : null;
+}
 
-  const rows: Record<string, unknown>[] = [];
-  for (let i = 0; i < tracks.length; i++) {
-    const t = tracks[i];
-    process.stdout.write(`  [${i + 1}/${tracks.length}] ${t.name} — ${t.artists.map((a) => a.name).join(", ")}… `);
-    try {
-      const f = await getAudioFeatures(t.id);
-      rows.push({
-        spotify_track_id: t.id,
-        rank: i + 1,
-        name: t.name,
-        artist: t.artists.map((a) => a.name).join(", "),
-        album: t.album.name,
-        release_year: yearFromReleaseDate(t.album.release_date),
-        duration_ms: t.duration_ms,
-        energy: f.energy ?? null,
-        danceability: f.danceability ?? null,
-        valence: f.valence ?? null,
-        acousticness: f.acousticness ?? null,
-        speechiness: f.speechiness ?? null,
-      });
-      console.log("ok");
-    } catch (e) {
-      console.log(`FAILED: ${(e as Error).message}`);
+function trackIdFromUri(uri: string): string | null {
+  const m = uri.match(/^spotify:track:([A-Za-z0-9]+)$/);
+  return m ? m[1] : null;
+}
+
+async function main() {
+  console.log(`Reading ${csvPath}…`);
+  const text = readFileSync(csvPath, "utf8");
+  const rows = parseCsv(text);
+  if (rows.length < 2) throw new Error("CSV has no data rows.");
+  const header = rows[0];
+  const idx = (name: string) => {
+    const i = header.indexOf(name);
+    if (i < 0) throw new Error(`CSV missing column "${name}"`);
+    return i;
+  };
+  const cols = {
+    uri: idx("Track URI"),
+    name: idx("Track Name"),
+    album: idx("Album Name"),
+    artist: idx("Artist Name(s)"),
+    release: idx("Release Date"),
+    duration: idx("Duration (ms)"),
+    danceability: idx("Danceability"),
+    energy: idx("Energy"),
+    speechiness: idx("Speechiness"),
+    acousticness: idx("Acousticness"),
+    valence: idx("Valence"),
+  };
+
+  const dataRows = rows.slice(1).filter((r) => r.length > 1 && r[cols.uri]?.length);
+  console.log(`Parsed ${dataRows.length} data rows.`);
+
+  const seen = new Set<string>();
+  const toInsert: Record<string, unknown>[] = [];
+  let skippedNoId = 0;
+  let skippedDupe = 0;
+  for (let i = 0; i < dataRows.length; i++) {
+    const r = dataRows[i];
+    const trackId = trackIdFromUri(r[cols.uri]);
+    if (!trackId) {
+      skippedNoId++;
+      continue;
     }
+    if (seen.has(trackId)) {
+      skippedDupe++;
+      continue;
+    }
+    seen.add(trackId);
+    toInsert.push({
+      spotify_track_id: trackId,
+      rank: i + 1,
+      name: r[cols.name],
+      artist: r[cols.artist],
+      album: r[cols.album],
+      release_year: yearFromDate(r[cols.release]),
+      duration_ms: parseInt(r[cols.duration], 10),
+      energy: toFloatOrNull(r[cols.energy]),
+      danceability: toFloatOrNull(r[cols.danceability]),
+      valence: toFloatOrNull(r[cols.valence]),
+      acousticness: toFloatOrNull(r[cols.acousticness]),
+      speechiness: toFloatOrNull(r[cols.speechiness]),
+    });
   }
 
-  if (rows.length === 0) throw new Error("No rows to insert.");
+  if (skippedNoId) console.log(`  (skipped ${skippedNoId} rows with no parseable Track URI)`);
+  if (skippedDupe) console.log(`  (skipped ${skippedDupe} duplicate Track URIs within the CSV)`);
 
-  console.log(`Upserting ${rows.length} rows into public.top_tracks…`);
+  console.log(`Inserting up to ${toInsert.length} rows into public.top_tracks (existing track IDs will be skipped)…`);
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { error } = await supabase.from("top_tracks").upsert(rows, { onConflict: "spotify_track_id" });
-  if (error) throw new Error(`Supabase upsert failed: ${error.message}`);
-
-  console.log(`Done. Inserted/updated ${rows.length} rows.`);
+  // Supabase has a payload-size cap; chunk to be safe on big CSVs.
+  const CHUNK = 500;
+  let inserted = 0;
+  for (let i = 0; i < toInsert.length; i += CHUNK) {
+    const slice = toInsert.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from("top_tracks")
+      .upsert(slice, { onConflict: "spotify_track_id", ignoreDuplicates: true })
+      .select("spotify_track_id");
+    if (error) throw new Error(`Supabase insert failed at offset ${i}: ${error.message}`);
+    inserted += data?.length ?? 0;
+  }
+  const skippedExisting = toInsert.length - inserted;
+  console.log(`Done. Inserted ${inserted} new rows; skipped ${skippedExisting} already-present tracks.`);
 }
 
 main().catch((e) => {
