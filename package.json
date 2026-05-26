@@ -8,7 +8,8 @@
     "build": "vite build",
     "start": "tsx server/index.ts",
     "db:new": "supabase migration new",
-    "db:push": "supabase db push"
+    "db:push": "supabase db push",
+    "seed:top-tracks": "tsx scripts/seed-top-tracks.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.4",

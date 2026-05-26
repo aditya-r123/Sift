@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import cookieSession from "cookie-session";
 import dotenv from "dotenv";
 import express from "express";
@@ -135,6 +135,38 @@ async function refreshIfNeeded(session: SessionShape) {
   session.access_token = data.access_token;
   session.token_expiry = now + (data.expires_in || 3600);
   if (data.refresh_token) session.refresh_token = data.refresh_token;
+  persistDevTokens(session);
+}
+function persistDevTokens(session: SessionShape | null | undefined): void {
+  if (NODE_ENV === "production") {
+    console.log("[persistDevTokens] skipped: NODE_ENV=production");
+    return;
+  }
+  if (!session?.access_token || !session?.refresh_token) {
+    console.log("[persistDevTokens] skipped: missing tokens on session", {
+      hasAccess: !!session?.access_token,
+      hasRefresh: !!session?.refresh_token,
+    });
+    return;
+  }
+  const target = path.join(repoRoot, ".tokens.json");
+  try {
+    writeFileSync(
+      target,
+      JSON.stringify(
+        {
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+          token_expiry: session.token_expiry,
+        },
+        null,
+        2
+      )
+    );
+    console.log(`[persistDevTokens] wrote ${target}`);
+  } catch (e) {
+    console.error(`[persistDevTokens] failed to write ${target}:`, e);
+  }
 }
 
 const DEFAULT_RAPID_HOST = "spotify-extended-audio-features-api.p.rapidapi.com";
@@ -193,6 +225,8 @@ const SCOPES = [
   "user-read-private",
   "user-top-read",
   "user-read-recently-played",
+  "playlist-read-private",
+  "playlist-read-collaborative",
 ].join(" ");
 
 app.get("/health", (_, res) => res.json({ ok: true }));
@@ -276,6 +310,7 @@ app.get("/auth/callback", async (req, res) => {
       req.session.access_token = tokens.access_token;
       req.session.refresh_token = tokens.refresh_token;
       req.session.token_expiry = Math.floor(Date.now() / 1000) + (tokens.expires_in || 3600);
+      persistDevTokens(req.session);
     }
     res.redirect(`${frontend}/#/connected`);
   } catch (e) {
