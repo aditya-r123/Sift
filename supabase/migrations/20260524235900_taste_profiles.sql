@@ -1,12 +1,14 @@
 /*
+[GenAI Use] Prompt
 In supabase/migrations/ create a new migration that:
-1. Adds a `taste_profiles` table with one row per auth user: user_id references auth.users(id), five preference fields defaulting to 0.5 and constrained to [0,1], swipe_count defaulting to 0 and constrained to >= 0, plus created_at and updated_at timestamps.
+1. Adds a 'taste_profiles' table with one row per auth user: user_id references auth.users(id), five preference fields defaulting to 0.5 and constrained to [0,1], swipe_count defaulting to 0 and constrained to >= 0, plus created_at and updated_at timestamps.
 2. Document that swipe_count only counts YES swipes used to update the taste profile, not NO/pass swipes.
 3. Enable RLS and allow authenticated users to SELECT only their own taste profile, but do not allow direct client INSERT or UPDATE since future writes will go through a database function/RPC.
 4. Update the existing new-user trigger function so new auth users automatically get a neutral taste profile, and backfill neutral taste profiles for existing users without overwriting existing rows.
 5. Use schema-qualified names like public.taste_profiles and keep the trigger function’s security/search-path style consistent with the existing profiles migration.
 */
 
+/* [GenAI Use] LLM Response Start*/
 create table public.taste_profiles (
   user_id       uuid primary key references auth.users (id) on delete cascade,
   energy        double precision not null default 0.5
@@ -57,7 +59,7 @@ begin
 end;
 $$;
 
--- Backfill a neutral taste profile for every existing user.
 insert into public.taste_profiles (user_id)
 select id from auth.users
 on conflict (user_id) do nothing;
+/* [GenAI Use] LLM Response End*/

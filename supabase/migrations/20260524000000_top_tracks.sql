@@ -1,3 +1,10 @@
+/*
+[GenAI Use] Prompt:
+In supabase/migrations/ create a migration for the seeded catalog of top tracks that powers the Discover / recommendation feeds:
+1. Add a 'top_tracks' table keyed by spotify_track_id text primary key, with rank int not null, name / artist / album text not null, release_year int (nullable), duration_ms int not null, the audio features energy, danceability, valence, acousticness and speechiness as real (nullable), and fetched_at timestamptz default now().
+2. Enable RLS and add a single policy 'top_tracks_public_read' allowing SELECT to everyone (using true), since the catalog is non-sensitive shared data.
+*/
+/* [GenAI Use] LLM Response Start*/
 create table public.top_tracks (
   spotify_track_id text primary key,
   rank int not null,

@@ -1,18 +1,20 @@
 /*
+[GenAI Use] Prompt
 In supabase/migrations/ create one new migration for the recommendation swipe/taste update RPC. 
 Do not run Supabase commands or edit app code; only add a new SQL migration file after inspecting the existing swipes, songs, and taste_profiles migrations.
-1. Add `public.calculate_new_weight(current, song_feature, alpha)` using:
+1. Add 'public.calculate_new_weight(current, song_feature, alpha)' using:
    new_weight = (1 - alpha) * current + alpha * song_feature.
    Validate all inputs are in range, do not round, and revoke execute from public/anon.
-2. Add `public.record_swipe_and_update_taste(p_song_id text, p_source text, p_direction text, p_alpha double precision default 0.10)`.
-   It must use `auth.uid()` only, reject unauthenticated users, validate source/direction/alpha, load the top_tracks row, reject missing songs or null audio features, and insert a swipe with `song_id = p_song_id`.
-3. Make swipe recording (so first swipe wins), with `ON CONFLICT DO NOTHING` so duplicate swipe requests do not update taste again.
+2. Add 'public.record_swipe_and_update_taste(p_song_id text, p_source text, p_direction text, p_alpha double precision default 0.10)'.
+   It must use 'auth.uid()' only, reject unauthenticated users, validate source/direction/alpha, load the top_tracks row, reject missing songs or null audio features, and insert a swipe with 'song_id = p_song_id'.
+3. Make swipe recording (so first swipe wins), with 'ON CONFLICT DO NOTHING' so duplicate swipe requests do not update taste again.
    NO swipes should only be recorded; YES swipes should create a neutral taste profile if needed, update all five taste values using the helper function, increment swipe_count, and set updated_at.
 4. Return whether the swipe was recorded, whether the profile was updated, the song/source/direction, the five updated taste values, and swipe_count.
-5. Use `security definer`, `search_path = ''`, schema-qualified names, revoke execute from public/anon, grant execute only to authenticated, and keep existing swipes policies unchanged.
+5. Use 'security definer', 'search_path = ''', schema-qualified names, revoke execute from public/anon, grant execute only to authenticated, and keep existing swipes policies unchanged.
 6. Add SQL comments explaining that the app maps right/left swipes to YES/NO, only YES updates taste, swipe_count counts newly recorded YES learning events, and duplicate swipe requests are safe.
 */
 
+/* [GenAI Use] LLM Response Start*/
 -- new_weight = (1 - alpha) * current + alpha * song_feature
 create or replace function public.calculate_new_weight(
   p_current       double precision,
@@ -178,3 +180,4 @@ text song IDs keyed by top_tracks.spotify_track_id, removes the uuid-to-text
 swipe insert cast, drops the obsolete uuid signature, and updates privileges
 to the new text/text/text/double precision signature.
 */
+/* [GenAI Use] LLM Response End*/
