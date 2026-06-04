@@ -2,6 +2,56 @@ import { useEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useTransform, PanInfo } from 'motion/react';
 import { songs as fallbackSongs, type Song } from '../songs.js';
 import { formatDuration, loadCardCoverMedia, loadGeneratedSongs, mergeSongMedia } from '../trackCards.js';
+import { useEffect, useState } from 'react';
+import { motion, useMotionValue, useTransform, PanInfo } from 'motion/react';
+import { supabase } from '../supabase.js';
+import albumCover from './imports/seasons.png';
+
+interface Song {
+  id: string;
+  title: string;
+  artist: string;
+  tags: string[];
+  color: string;
+}
+
+const initialSongs: Song[] = [
+  {
+    id: '1',
+    title: 'Seasons',
+    artist: 'wave to earth',
+    tags: ['Alternative', 'Energy', 'rnb', 'BPM'],
+    color: '#ef4444',
+  },
+  {
+    id: '2',
+    title: 'In a Good Way',
+    artist: 'Faye Webster',
+    tags: ['R&B', 'Indie'],
+    color: '#14b8a6',
+  },
+  {
+    id: '3',
+    title: 'Love Affair',
+    artist: 'Umi',
+    tags: ['Indie', 'R&B'],
+    color: '#f97316',
+  },
+  {
+    id: '4',
+    title: 'Butterfly Dust',
+    artist: 'Meaningful Stone',
+    tags: ['Dream Pop', 'Indie'],
+    color: '#8b5cf6',
+  },
+  {
+    id: '5',
+    title: 'Kerosene',
+    artist: 'Crystal Castles',
+    tags: ['Ambient', 'Electronic'],
+    color: '#14b8a6',
+  },
+];
 
 export function ExplorePage() {
   const [songs, setSongs] = useState<Song[]>(fallbackSongs);
@@ -56,10 +106,33 @@ export function ExplorePage() {
       cancelled = true;
     };
   }, [songs]);
+  const [meId, setMeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setMeId(data.session?.user.id ?? null);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setMeId(session?.user.id ?? null);
+    });
+
+    return () => sub.subscription.unsubscribe();
+  }, []);
 
   const removeCard = (direction: 'left' | 'right') => {
     if (currentIndex < songs.length) {
+      const song = songs[currentIndex];
       setCurrentIndex(currentIndex + 1);
+
+      if (meId) {
+        supabase
+          .from('swipes')
+          .upsert({ user_id: meId, song_id: song.id, direction })
+          .then(({ error }) => {
+            if (error) console.warn('Failed to save swipe:', error.message);
+          });
+      }
     }
   };
 

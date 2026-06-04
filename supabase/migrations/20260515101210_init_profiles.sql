@@ -1,3 +1,14 @@
+/*
+[GenAI Use] Prompt:
+In supabase/migrations/ create the initial migration that backs user profiles:
+1. Add a 'profiles' table keyed by id uuid referencing auth.users(id) on delete cascade, with display_name text, avatar_url text, and created_at / updated_at timestamptz defaulting to now().
+2. Enable RLS and add owner-only policies: a user may SELECT, INSERT, and UPDATE only the row whose id equals auth.uid() (the UPDATE policy needs both using and with check).
+3. Add a 'handle_new_user()' trigger function (security definer, search_path = '') that, for each new auth.users row, inserts a profiles row using the new id and a display_name resolved from raw_user_meta_data in the order display_name -> full_name -> name.
+4. Attach it as an after-insert, for-each-row trigger 'on_auth_user_created' on auth.users.
+Use schema-qualified names like public.profiles.
+*/
+
+/* [GenAI Use] LLM Response Start*/
 create table public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   display_name text,
@@ -44,3 +55,4 @@ $$;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+/* [GenAI Use] LLM Response End*/
