@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useTransform, PanInfo } from 'motion/react';
-import { X, Heart } from 'lucide-react';
+import { Heart, X } from 'lucide-react';
 import { supabase } from '../supabase.js';
 import { songs, type Song } from '../songs.js';
+import { formatDuration, loadCardCoverMedia, loadGeneratedSongs, mergeSongMedia } from '../trackCards.js';
 
 const BATCH_SIZE = 5;
 
 function pickNextBatch(
+  sourceSongs: Song[],
   seenIds: Set<string>,
   tagScores: Record<string, number>
 ): Song[] {
-  const unseen = songs.filter((s) => !seenIds.has(s.id));
+  const unseen = sourceSongs.filter((s) => !seenIds.has(s.id));
   if (unseen.length === 0) return [];
 
   const scored = unseen.map((s) => ({
@@ -23,19 +25,21 @@ function pickNextBatch(
 
 export function DiscoverPage() {
   const [meId, setMeId] = useState<string | null>(null);
+  const [sourceSongs, setSourceSongs] = useState<Song[]>(songs);
   const [currentBatch, setCurrentBatch] = useState<Song[]>([]);
   const [batchSwipes, setBatchSwipes] = useState<Record<string, 'left' | 'right'>>({});
   const [tagScores, setTagScores] = useState<Record<string, number>>({});
   const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const mediaRefreshKey = useRef('');
 
   // ref so recordSwipe always sees the latest state without stale closures
-  const stateRef = useRef({ seenIds, tagScores, batchSwipes, currentBatch });
-  stateRef.current = { seenIds, tagScores, batchSwipes, currentBatch };
+  const stateRef = useRef({ seenIds, tagScores, batchSwipes, currentBatch, sourceSongs });
+  stateRef.current = { seenIds, tagScores, batchSwipes, currentBatch, sourceSongs };
 
   const startBatch = useCallback(
-    (seen: Set<string>, scores: Record<string, number>) => {
-      const batch = pickNextBatch(seen, scores);
+    (source: Song[], seen: Set<string>, scores: Record<string, number>) => {
+      const batch = pickNextBatch(source, seen, scores);
       setCurrentBatch(batch);
       setBatchSwipes({});
     },
@@ -46,9 +50,18 @@ export function DiscoverPage() {
     let cancelled = false;
 
     async function init(userId: string | null) {
+      let cards = songs;
+      try {
+        const generated = await loadGeneratedSongs();
+        if (generated.length > 0) cards = generated;
+      } catch (error) {
+        console.warn('Failed to load generated cards:', error);
+      }
+
       if (!userId) {
+        setSourceSongs(cards);
         setLoading(false);
-        startBatch(new Set(), {});
+        startBatch(cards, new Set(), {});
         return;
       }
 
@@ -64,7 +77,7 @@ export function DiscoverPage() {
 
         for (const row of data ?? []) {
           seen.add(row.song_id as string);
-          const song = songs.find((s) => s.id === row.song_id);
+          const song = cards.find((s) => s.id === row.song_id);
           if (song) {
             const delta = row.direction === 'right' ? 1 : -0.5;
             for (const tag of song.tags) {
@@ -74,13 +87,17 @@ export function DiscoverPage() {
         }
 
         if (!cancelled) {
+          setSourceSongs(cards);
           setSeenIds(seen);
           setTagScores(scores);
-          startBatch(seen, scores);
+          startBatch(cards, seen, scores);
         }
       } catch {
         // swipe history unavailable — just start fresh
-        if (!cancelled) startBatch(new Set(), {});
+        if (!cancelled) {
+          setSourceSongs(cards);
+          startBatch(cards, new Set(), {});
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -104,9 +121,34 @@ export function DiscoverPage() {
     };
   }, [startBatch]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshMissingMedia() {
+      const songsMissingMedia = sourceSongs.filter((song) => !song.coverImage);
+      if (songsMissingMedia.length === 0) return;
+
+      const key = songsMissingMedia.map((song) => song.id).join(',');
+      if (key === mediaRefreshKey.current) return;
+
+      const mediaById = await loadCardCoverMedia(songsMissingMedia.map((song) => song.id));
+      if (cancelled || mediaById.size === 0) return;
+      mediaRefreshKey.current = key;
+
+      setSourceSongs((current) => current.map((song) => mergeSongMedia(song, mediaById.get(song.id))));
+      setCurrentBatch((current) => current.map((song) => mergeSongMedia(song, mediaById.get(song.id))));
+    }
+
+    void refreshMissingMedia();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceSongs]);
+
   const recordSwipe = useCallback(
     async (song: Song, direction: 'left' | 'right') => {
-      const { seenIds: currentSeen, tagScores: currentScores, batchSwipes: currentBatch, currentBatch: batch } =
+      const { seenIds: currentSeen, tagScores: currentScores, batchSwipes: currentBatch, currentBatch: batch, sourceSongs: source } =
         stateRef.current;
 
       const nextSeen = new Set(currentSeen);
@@ -135,7 +177,7 @@ export function DiscoverPage() {
       }
 
       if (Object.keys(nextBatchSwipes).length >= batch.length) {
-        startBatch(nextSeen, nextScores);
+        startBatch(source, nextSeen, nextScores);
       }
     },
     [meId, startBatch]
@@ -266,6 +308,11 @@ function SwipeCard({
         <div className="text-center">
           <h3 className="text-white font-bold text-3xl mb-2">{song.title}</h3>
           <p className="text-gray-400 text-lg">{song.artist}</p>
+          {[song.album, song.releaseYear, formatDuration(song.durationMs)].filter(Boolean).length > 0 && (
+            <p className="mt-1 text-sm text-gray-500">
+              {[song.album, song.releaseYear, formatDuration(song.durationMs)].filter(Boolean).join(' · ')}
+            </p>
+          )}
         </div>
 
         {isTop && (
