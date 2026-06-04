@@ -26,3 +26,4 @@ alter table public.top_tracks enable row level security;
 create policy "top_tracks_public_read"
   on public.top_tracks for select
   using (true);
+/* [GenAI Use] LLM Response End*/
