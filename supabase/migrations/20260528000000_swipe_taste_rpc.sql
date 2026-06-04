@@ -4,8 +4,8 @@ Do not run Supabase commands or edit app code; only add a new SQL migration file
 1. Add `public.calculate_new_weight(current, song_feature, alpha)` using:
    new_weight = (1 - alpha) * current + alpha * song_feature.
    Validate all inputs are in range, do not round, and revoke execute from public/anon.
-2. Add `public.record_swipe_and_update_taste(p_song_id uuid, p_source text, p_direction text, p_alpha double precision default 0.10)`.
-   It must use `auth.uid()` only, reject unauthenticated users, validate source/direction/alpha, load the song, reject missing songs or null audio features, and insert a swipe with `song_id = p_song_id::text`.
+2. Add `public.record_swipe_and_update_taste(p_song_id text, p_source text, p_direction text, p_alpha double precision default 0.10)`.
+   It must use `auth.uid()` only, reject unauthenticated users, validate source/direction/alpha, load the top_tracks row, reject missing songs or null audio features, and insert a swipe with `song_id = p_song_id`.
 3. Make swipe recording (so first swipe wins), with `ON CONFLICT DO NOTHING` so duplicate swipe requests do not update taste again.
    NO swipes should only be recorded; YES swipes should create a neutral taste profile if needed, update all five taste values using the helper function, increment swipe_count, and set updated_at.
 4. Return whether the swipe was recorded, whether the profile was updated, the song/source/direction, the five updated taste values, and swipe_count.
@@ -45,8 +45,10 @@ revoke execute on function public.calculate_new_weight(double precision, double 
 
 -- RPC: record a swipe and  update the taste profile on YES swipes.
 
+drop function if exists public.record_swipe_and_update_taste(uuid, text, text, double precision);
+
 create or replace function public.record_swipe_and_update_taste(
-  p_song_id   uuid,
+  p_song_id   text,
   p_source    text,
   p_direction text,
   p_alpha     double precision default 0.10
@@ -54,7 +56,7 @@ create or replace function public.record_swipe_and_update_taste(
 returns table (
   recorded        boolean,
   profile_updated boolean,
-  song_id         uuid,
+  song_id         text,
   source          text,
   direction       text,
   energy          double precision,
@@ -94,10 +96,10 @@ begin
   end if;
 
   -- Load song and verify features are populated
-  select s.id, s.energy, s.danceability, s.valence, s.acousticness, s.speechiness
+  select s.energy, s.danceability, s.valence, s.acousticness, s.speechiness
   into v_song
-  from public.songs s
-  where s.id = p_song_id;
+  from public.top_tracks s
+  where s.spotify_track_id = p_song_id;
 
   if not found then
     raise exception 'Song % not found', p_song_id;
@@ -113,9 +115,8 @@ begin
   end if;
 
   -- First-swipe-wins: insert the swipe, skip silently on duplicate.
-  -- swipes.song_id is text, so cast the uuid for now.
   insert into public.swipes (user_id, song_id, source, direction)
-  values (v_uid, p_song_id::text, p_source, p_direction)
+  values (v_uid, p_song_id, p_source, p_direction)
   on conflict (user_id, song_id) do nothing
   returning id into v_inserted_id;
 
@@ -163,9 +164,17 @@ begin
 end;
 $$;
 
-revoke execute on function public.record_swipe_and_update_taste(uuid, text, text, double precision)
+revoke execute on function public.record_swipe_and_update_taste(text, text, text, double precision)
   from public;
-revoke execute on function public.record_swipe_and_update_taste(uuid, text, text, double precision)
+revoke execute on function public.record_swipe_and_update_taste(text, text, text, double precision)
   from anon;
-grant execute on function public.record_swipe_and_update_taste(uuid, text, text, double precision)
+grant execute on function public.record_swipe_and_update_taste(text, text, text, double precision)
   to authenticated;
+
+/*
+AI-use trail: Updated record_swipe_and_update_taste to use public.top_tracks
+instead of the dropped public.songs table. The RPC now accepts and returns
+text song IDs keyed by top_tracks.spotify_track_id, removes the uuid-to-text
+swipe insert cast, drops the obsolete uuid signature, and updates privileges
+to the new text/text/text/double precision signature.
+*/
