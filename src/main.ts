@@ -1,4 +1,3 @@
-// Initialize Vercel Web Analytics
 import { inject } from '@vercel/analytics';
 import { createElement, type ComponentType } from "react";
 import { createRoot } from "react-dom/client";
@@ -9,10 +8,6 @@ inject();
 
 const apiBase = "";
 
-// Mount the React pages into their existing tab panels. The panels are
-// always in the DOM (bindTabs just toggles their `hidden` attribute), so
-// mounting once on startup is enough — the content shows when its tab is
-// selected.
 function mountReactPages() {
   const mounts: Array<[string, () => Promise<ComponentType | undefined>]> = [
     ["panel-discover", async () => (await import("./pages/Discover.js")).DiscoverPage],

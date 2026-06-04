@@ -1,19 +1,14 @@
--- Make profiles.display_name reliable for Google-auth users.
---
--- The init migration's INSERT trigger reads full_name / name from
--- raw_user_meta_data, but:
---   1. anyone who signed up before that trigger existed has no profile row
---      (or a row with display_name = null);
---   2. when a Google user signs in again, Supabase refreshes
---      raw_user_meta_data, but profiles wasn't being kept in sync.
---
--- This migration backfills existing rows and adds an UPDATE trigger so
--- profiles.display_name follows whatever name Google (or any provider) hands
--- back. The coalesce order — display_name → full_name → name — means an
--- explicit display_name set at email/password signup still wins over a
--- later-attached OAuth name.
+/*
+[GenAI Use] Prompt:
+In supabase/migrations/ create a migration that makes profiles.display_name reliable for OAuth (e.g. Google) users, given that raw_user_meta_data is refreshed on each login and earlier signups may have no profile row or a null display_name:
+1. Insert profile rows for any auth.users that have none yet, resolving display_name from raw_user_meta_data in the order display_name -> full_name -> name, with on conflict (id) do nothing.
+2. Backfill existing profiles whose display_name is null but whose auth.users metadata has a usable name, also setting updated_at = now().
+3. Add a 'handle_user_metadata_update()' trigger function (security definer, search_path = '') that recomputes that same coalesced name and, only when it is non-null and is distinct from the current value, updates the matching profiles row.
+4. Drop any existing on_auth_user_updated trigger, then recreate it as an after-update-of raw_user_meta_data, for-each-row trigger on auth.users.
+Keep the coalesce order so an explicit display_name set at email/password signup still wins over a later-attached OAuth name.
+*/
 
--- 1. Create any missing profile rows (auth.users that have no profile yet).
+/* [GenAI Use] LLM Response Start*/
 insert into public.profiles (id, display_name)
 select
   u.id,
@@ -25,8 +20,6 @@ select
 from auth.users u
 on conflict (id) do nothing;
 
--- 2. Backfill existing profile rows whose display_name is null but whose
---    auth.users metadata has a name we can use.
 update public.profiles p
 set
   display_name = coalesce(
@@ -44,8 +37,6 @@ where p.id = u.id
     u.raw_user_meta_data ->> 'name'
   ) is not null;
 
--- 3. Keep profiles.display_name in sync on subsequent auth.users updates
---    (Google sign-in refreshes raw_user_meta_data on each login).
 create or replace function public.handle_user_metadata_update()
 returns trigger
 language plpgsql
@@ -81,3 +72,4 @@ drop trigger if exists on_auth_user_updated on auth.users;
 create trigger on_auth_user_updated
   after update of raw_user_meta_data on auth.users
   for each row execute function public.handle_user_metadata_update();
+/* [GenAI Use] LLM Response End*/
