@@ -6,12 +6,23 @@ import dotenv from "dotenv";
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 interface HttpError extends Error {
   status?: number;
   body?: unknown;
   attemptedUrl?: string;
 }
+
+type TopTrackMediaLookupRow = {
+  spotify_track_id: string;
+  name: string;
+  artist: string;
+  album: string | null;
+  release_year: number | null;
+  duration_ms: number | null;
+  cover_url: string | null;
+};
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, "..");
@@ -41,6 +52,8 @@ const NODE_ENV = process.env.NODE_ENV;
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST;
 const RAPIDAPI_FEATURES_PATH = process.env.RAPIDAPI_FEATURES_PATH;
+const SUPABASE_URL = String(process.env.VITE_SUPABASE_URL ?? "").trim();
+const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
 
 for (const [val, key] of [
   [SPOTIFY_CLIENT_ID, "SPOTIFY_CLIENT_ID"],
@@ -53,6 +66,12 @@ for (const [val, key] of [
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
+const supabaseAdmin: SupabaseClient | null =
+  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      })
+    : null;
 
 app.use(express.json({ limit: "32kb" }));
 
@@ -137,6 +156,7 @@ async function refreshIfNeeded(session: SessionShape) {
   if (data.refresh_token) session.refresh_token = data.refresh_token;
   persistDevTokens(session);
 }
+
 function persistDevTokens(session: SessionShape | null | undefined): void {
   if (NODE_ENV === "production") {
     console.log("[persistDevTokens] skipped: NODE_ENV=production");
@@ -404,6 +424,159 @@ app.get("/api/auth-status", async (req, res) => {
 function isPlausibleTrackId(id: string): boolean {
   return typeof id === "string" && /^[A-Za-z0-9_-]{15,}$/.test(id);
 }
+
+type TrackCardMedia = {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  releaseYear: number | null;
+  durationMs: number | null;
+  coverImage: string;
+};
+
+function normalizeComparable(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function highResolutionITunesArtwork(url: string): string {
+  return url.replace(/\/\d+x\d+bb\.(jpg|png|webp)$/i, "/600x600bb.$1");
+}
+
+type ITunesSearchResult = {
+  trackName?: string;
+  artistName?: string;
+  collectionName?: string;
+  artworkUrl100?: string;
+  trackTimeMillis?: number;
+  releaseDate?: string;
+};
+
+function scoreITunesResult(row: TopTrackMediaLookupRow, result: ITunesSearchResult): number {
+  const rowTitle = normalizeComparable(row.name);
+  const rowArtist = normalizeComparable(row.artist);
+  const rowAlbum = normalizeComparable(row.album ?? "");
+  const resultTitle = normalizeComparable(result.trackName ?? "");
+  const resultArtist = normalizeComparable(result.artistName ?? "");
+  const resultAlbum = normalizeComparable(result.collectionName ?? "");
+  let score = 0;
+
+  if (resultTitle === rowTitle) score += 50;
+  else if (resultTitle.includes(rowTitle) || rowTitle.includes(resultTitle)) score += 20;
+
+  for (const artistPart of rowArtist.split(" ").filter((part) => part.length > 2)) {
+    if (resultArtist.includes(artistPart)) score += 4;
+  }
+
+  if (rowAlbum && resultAlbum === rowAlbum) score += 20;
+  else if (rowAlbum && (resultAlbum.includes(rowAlbum) || rowAlbum.includes(resultAlbum))) score += 8;
+
+  if (row.duration_ms && result.trackTimeMillis) {
+    const delta = Math.abs(row.duration_ms - result.trackTimeMillis);
+    if (delta < 1500) score += 20;
+    else if (delta < 5000) score += 10;
+  }
+
+  if (row.release_year && result.releaseDate?.startsWith(String(row.release_year))) score += 5;
+
+  return score;
+}
+
+async function findITunesCover(row: TopTrackMediaLookupRow): Promise<string> {
+  const query = [row.name, row.artist, row.album ?? ""].filter(Boolean).join(" ");
+  const params = new URLSearchParams({
+    term: query,
+    entity: "song",
+    limit: "8",
+  });
+  const res = await fetch(`https://itunes.apple.com/search?${params.toString()}`);
+  if (!res.ok) return "";
+
+  const data = (await res.json().catch(() => ({}))) as { results?: ITunesSearchResult[] };
+  const best = (data.results ?? [])
+    .filter((result) => result.artworkUrl100)
+    .map((result) => ({ result, score: scoreITunesResult(row, result) }))
+    .sort((a, b) => b.score - a.score)[0];
+
+  if (!best || best.score < 35 || !best.result.artworkUrl100) return "";
+  return highResolutionITunesArtwork(best.result.artworkUrl100);
+}
+
+async function coverMediaFromTopTracks(ids: string[]): Promise<TrackCardMedia[]> {
+  if (!supabaseAdmin || ids.length === 0) return [];
+
+  const { data, error } = await supabaseAdmin
+    .from("top_tracks")
+    .select("spotify_track_id, name, artist, album, release_year, duration_ms, cover_url")
+    .in("spotify_track_id", ids);
+  if (error) {
+    console.warn("Failed to read top_tracks for iTunes cover lookup:", error.message);
+    return [];
+  }
+
+  return Promise.all(
+    ((data ?? []) as TopTrackMediaLookupRow[]).map(async (row) => ({
+      id: row.spotify_track_id,
+      title: row.name,
+      artist: row.artist,
+      album: row.album ?? "",
+      releaseYear: row.release_year,
+      durationMs: row.duration_ms,
+      coverImage: row.cover_url || (await findITunesCover(row)),
+    }))
+  );
+}
+
+async function cacheTrackMedia(tracks: TrackCardMedia[]): Promise<void> {
+  if (!supabaseAdmin || tracks.length === 0) return;
+
+  let failures = 0;
+  await Promise.all(
+    tracks.map(async (track) => {
+      const media: { cover_url?: string } = {};
+      if (track.coverImage) media.cover_url = track.coverImage;
+      if (Object.keys(media).length === 0) return;
+
+      const { error } = await supabaseAdmin.from("top_tracks").update(media).eq("spotify_track_id", track.id);
+      if (error) failures++;
+    })
+  );
+  if (failures > 0) {
+    console.warn(`Failed to cache Spotify media for ${failures} track(s)`);
+  }
+}
+
+app.get("/api/tracks", async (req, res) => {
+  try {
+    const rawIds = typeof req.query.ids === "string" ? req.query.ids : "";
+    const ids = rawIds
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+
+    if (ids.length === 0 || ids.length > 50 || ids.some((id) => !isPlausibleTrackId(id))) {
+      res.status(400).json({ error: "Provide 1-50 valid Spotify track IDs in the ids query param" });
+      return;
+    }
+
+    const cardMedia = await coverMediaFromTopTracks(ids);
+
+    void cacheTrackMedia(cardMedia);
+
+    res.json({
+      tracks: cardMedia,
+    });
+  } catch (e) {
+    const err = e as HttpError;
+    const status = typeof err.status === "number" ? err.status : 500;
+    res.status(status).json({ error: err.message || String(e) });
+  }
+});
 
 app.get("/api/track-insights/:trackId", guard, async (req, res) => {
   try {
