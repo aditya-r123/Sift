@@ -7,7 +7,7 @@ In supabase/migrations/ Create a new migration that:
 
 /* [GenAI Use] LLM Response Start*/
 
-create table public.songs (
+create table if not exists public.songs (
   id                uuid primary key default gen_random_uuid(),
   spotify_track_id  text not null unique,
   title             text,
@@ -22,21 +22,24 @@ create table public.songs (
 
 alter table public.songs enable row level security;
 
+drop policy if exists "songs_select_authenticated" on public.songs;
+
 create policy "songs_select_authenticated"
   on public.songs for select
   to authenticated
   using (true);
 
 
-alter table public.swipes add column source text;
+alter table public.swipes add column if not exists source text;
 update public.swipes set source = 'DISCOVER' where source is null;
 alter table public.swipes alter column source set not null;
+alter table public.swipes drop constraint if exists swipes_source_check;
 alter table public.swipes
   add constraint swipes_source_check check (source in ('DISCOVER', 'EXPLORE'));
 
+alter table public.swipes drop constraint if exists swipes_direction_check;
 update public.swipes set direction = 'YES' where direction = 'right';
 update public.swipes set direction = 'NO'  where direction = 'left';
-alter table public.swipes drop constraint swipes_direction_check;
 alter table public.swipes
   add constraint swipes_direction_check check (direction in ('YES', 'NO'));
 
