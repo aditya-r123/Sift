@@ -1,3 +1,7 @@
+import { useEffect, useRef, useState } from 'react';
+import { motion, useMotionValue, useTransform, PanInfo } from 'motion/react';
+import { songs as fallbackSongs, type Song } from '../songs.js';
+import { formatDuration, loadCardCoverMedia, loadGeneratedSongs, mergeSongMedia } from '../trackCards.js';
 import { useEffect, useState } from 'react';
 import { motion, useMotionValue, useTransform, PanInfo } from 'motion/react';
 import { supabase } from '../supabase.js';
@@ -50,8 +54,58 @@ const initialSongs: Song[] = [
 ];
 
 export function ExplorePage() {
-  const [songs, setSongs] = useState(initialSongs);
+  const [songs, setSongs] = useState<Song[]>(fallbackSongs);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const mediaRefreshKey = useRef('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function init() {
+      try {
+        const generated = await loadGeneratedSongs();
+        if (!cancelled && generated.length > 0) {
+          setSongs(generated);
+          setCurrentIndex(0);
+        }
+      } catch (error) {
+        console.warn('Failed to load explore cards:', error);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void init();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshMissingMedia() {
+      const songsMissingMedia = songs.filter((song) => !song.coverImage);
+      if (songsMissingMedia.length === 0) return;
+
+      const key = songsMissingMedia.map((song) => song.id).join(',');
+      if (key === mediaRefreshKey.current) return;
+
+      const mediaById = await loadCardCoverMedia(songsMissingMedia.map((song) => song.id));
+      if (cancelled || mediaById.size === 0) return;
+      mediaRefreshKey.current = key;
+
+      setSongs((current) => current.map((song) => mergeSongMedia(song, mediaById.get(song.id))));
+    }
+
+    void refreshMissingMedia();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [songs]);
   const [meId, setMeId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -89,7 +143,11 @@ export function ExplorePage() {
       <div className="w-full max-w-lg px-6 -mt-8">
         <h1 className="text-3xl font-bold text-white mb-8">Explore</h1>
         <div className="h-[520px] relative">
-          {visibleCards.length === 0 ? (
+          {loading ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <p className="text-gray-500 text-lg">Loading…</p>
+            </div>
+          ) : visibleCards.length === 0 ? (
             <div className="absolute inset-0 flex items-center justify-center">
               <p className="text-gray-500 text-lg">No more songs to explore!</p>
             </div>
@@ -125,7 +183,7 @@ function SwipeCard({
   const rotate = useTransform(x, [-200, 200], [-25, 25]);
   const opacity = useTransform(x, [-200, -100, 0, 100, 200], [0, 1, 1, 1, 0]);
 
-  const handleDragEnd = (event: PointerEvent, info: PanInfo) => {
+  const handleDragEnd = (_event: PointerEvent, info: PanInfo) => {
     if (Math.abs(info.offset.x) > 100) {
       onSwipe(info.offset.x > 0 ? 'right' : 'left');
     }
@@ -166,9 +224,9 @@ function SwipeCard({
         </div>
 
         <div className="flex-1 flex items-center justify-center">
-          {song.id === '1' ? (
+          {song.coverImage ? (
             <img
-              src={albumCover}
+              src={song.coverImage}
               alt={`${song.title} cover`}
               className="w-64 h-64 rounded-3xl shadow-lg object-cover"
             />
@@ -185,6 +243,11 @@ function SwipeCard({
         <div className="text-center">
           <h3 className="text-white font-bold text-3xl mb-2">{song.title}</h3>
           <p className="text-gray-400 text-lg">{song.artist}</p>
+          {[song.album, song.releaseYear, formatDuration(song.durationMs)].filter(Boolean).length > 0 && (
+            <p className="mt-1 text-sm text-gray-500">
+              {[song.album, song.releaseYear, formatDuration(song.durationMs)].filter(Boolean).join(' · ')}
+            </p>
+          )}
         </div>
       </div>
     </motion.div>

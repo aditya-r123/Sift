@@ -86,6 +86,10 @@ async function main() {
     if (i < 0) throw new Error(`CSV missing column "${name}"`);
     return i;
   };
+  const optionalIdx = (name: string) => {
+    const i = header.indexOf(name);
+    return i >= 0 ? i : null;
+  };
   const cols = {
     uri: idx("Track URI"),
     name: idx("Track Name"),
@@ -98,6 +102,7 @@ async function main() {
     speechiness: idx("Speechiness"),
     acousticness: idx("Acousticness"),
     valence: idx("Valence"),
+    coverUrl: optionalIdx("Cover URL"),
   };
 
   const dataRows = rows.slice(1).filter((r) => r.length > 1 && r[cols.uri]?.length);
@@ -119,7 +124,7 @@ async function main() {
       continue;
     }
     seen.add(trackId);
-    toInsert.push({
+    const row: Record<string, unknown> = {
       spotify_track_id: trackId,
       rank: i + 1,
       name: r[cols.name],
@@ -132,30 +137,31 @@ async function main() {
       valence: toFloatOrNull(r[cols.valence]),
       acousticness: toFloatOrNull(r[cols.acousticness]),
       speechiness: toFloatOrNull(r[cols.speechiness]),
-    });
+    };
+    if (cols.coverUrl !== null) row.cover_url = r[cols.coverUrl] || null;
+    toInsert.push(row);
   }
 
   if (skippedNoId) console.log(`  (skipped ${skippedNoId} rows with no parseable Track URI)`);
   if (skippedDupe) console.log(`  (skipped ${skippedDupe} duplicate Track URIs within the CSV)`);
 
-  console.log(`Inserting up to ${toInsert.length} rows into public.top_tracks (existing track IDs will be skipped)…`);
+  console.log(`Upserting up to ${toInsert.length} rows into public.top_tracks…`);
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   // Supabase has a payload-size cap; chunk to be safe on big CSVs.
   const CHUNK = 500;
-  let inserted = 0;
+  let upserted = 0;
   for (let i = 0; i < toInsert.length; i += CHUNK) {
     const slice = toInsert.slice(i, i + CHUNK);
     const { data, error } = await supabase
       .from("top_tracks")
-      .upsert(slice, { onConflict: "spotify_track_id", ignoreDuplicates: true })
+      .upsert(slice, { onConflict: "spotify_track_id" })
       .select("spotify_track_id");
-    if (error) throw new Error(`Supabase insert failed at offset ${i}: ${error.message}`);
-    inserted += data?.length ?? 0;
+    if (error) throw new Error(`Supabase upsert failed at offset ${i}: ${error.message}`);
+    upserted += data?.length ?? 0;
   }
-  const skippedExisting = toInsert.length - inserted;
-  console.log(`Done. Inserted ${inserted} new rows; skipped ${skippedExisting} already-present tracks.`);
+  console.log(`Done. Upserted ${upserted} rows.`);
 }
 
 main().catch((e) => {

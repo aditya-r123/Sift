@@ -4,6 +4,9 @@ export interface Song {
   id: string;
   title: string;
   artist: string;
+  album?: string;
+  releaseYear?: number | null;
+  durationMs?: number | null;
   tags: string[];
   color: string;
   coverImage?: string;
