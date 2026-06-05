@@ -107,12 +107,23 @@ function hasSpotifySession(session: SessionShape | null | undefined): boolean {
 }
 
 async function fetchSpotify(path: string, session: SessionShape | null | undefined) {
+  return requestSpotify(path, session);
+}
+
+async function requestSpotify(
+  path: string,
+  session: SessionShape | null | undefined,
+  init: RequestInit = {}
+) {
   if (!session?.access_token) {
     throw new Error("Unauthorized");
   }
   const url = path.startsWith("http") ? path : `https://api.spotify.com/v1/${path}`;
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${session.access_token}`);
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${session.access_token}` },
+    ...init,
+    headers,
   });
   const text = await res.text();
   let body: unknown;
@@ -130,6 +141,16 @@ async function fetchSpotify(path: string, session: SessionShape | null | undefin
     throw e;
   }
   return body;
+}
+
+async function postSpotifyJson(path: string, session: SessionShape | null | undefined, body: unknown) {
+  return requestSpotify(path, session, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
 }
 
 async function refreshIfNeeded(session: SessionShape) {
@@ -284,6 +305,7 @@ const SCOPES = [
   "user-read-recently-played",
   "playlist-read-private",
   "playlist-read-collaborative",
+  "playlist-modify-private",
 ].join(" ");
 
 app.get("/health", (_, res) => res.json({ ok: true }));
@@ -441,6 +463,146 @@ app.get("/api/recently-played", guard, async (req, res) => {
     const err = e as HttpError;
     const status = typeof err.status === "number" ? err.status : 500;
     res.status(status).json({ error: err.message || String(e) });
+  }
+});
+
+type SpotifyCreatedPlaylist = {
+  id?: string;
+  external_urls?: { spotify?: string };
+};
+
+type SpotifyAddTracksResult = {
+  snapshot_id?: string;
+};
+
+function playlistTrackIdsFromBody(body: unknown): string[] {
+  if (!body || typeof body !== "object") return [];
+  const raw = (body as { trackIds?: unknown }).trackIds;
+  if (!Array.isArray(raw)) return [];
+  return [
+    ...new Set(
+      raw
+        .filter((id): id is string => typeof id === "string")
+        .map((id) => id.trim())
+        .filter((id) => isPlausibleTrackId(id))
+    ),
+  ];
+}
+
+function playlistNameFromBody(body: unknown): string {
+  if (!body || typeof body !== "object") return "Sift Liked Songs";
+  const raw = (body as { name?: unknown }).name;
+  if (typeof raw !== "string") return "Sift Liked Songs";
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, 100) : "Sift Liked Songs";
+}
+
+app.post("/api/liked-songs-playlist", guard, async (req, res) => {
+  let createdPlaylist: { id: string; url: string } | null = null;
+  try {
+    const trackIds = playlistTrackIdsFromBody(req.body);
+    if (trackIds.length === 0) {
+      res.status(400).json({ error: "No valid Spotify track IDs to add." });
+      return;
+    }
+
+    const playlistName = playlistNameFromBody(req.body);
+    const playlist = (await postSpotifyJson("me/playlists", req.session, {
+      name: playlistName,
+      public: false,
+      description: "Songs you swiped right on in Sift.",
+    })) as SpotifyCreatedPlaylist;
+
+    if (!playlist.id) {
+      res.status(502).json({ error: "Spotify did not return a playlist id." });
+      return;
+    }
+
+    createdPlaylist = {
+      id: playlist.id,
+      url: playlist.external_urls?.spotify ?? `https://open.spotify.com/playlist/${playlist.id}`,
+    };
+
+    const uris = trackIds.map((id) => `spotify:track:${id}`);
+    let addedTrackCount = 0;
+    for (let i = 0; i < uris.length; i += 100) {
+      const chunk = uris.slice(i, i + 100);
+      const added = (await postSpotifyJson(`playlists/${encodeURIComponent(playlist.id)}/items`, req.session, {
+        position: i,
+        uris: chunk,
+      })) as SpotifyAddTracksResult;
+      if (!added.snapshot_id) {
+        throw new Error("Spotify did not confirm tracks were added to the playlist.");
+      }
+      addedTrackCount += chunk.length;
+    }
+
+    if (addedTrackCount !== trackIds.length) {
+      throw new Error(`Spotify only added ${addedTrackCount} of ${trackIds.length} tracks.`);
+    }
+
+    res.json({
+      playlistId: playlist.id,
+      playlistUrl: createdPlaylist.url,
+      trackCount: trackIds.length,
+      addedTrackCount,
+    });
+  } catch (e) {
+    const err = e as HttpError;
+    const status = typeof err.status === "number" ? err.status : 500;
+    const needsReconnect =
+      status === 401 || status === 403
+        ? "Reconnect Spotify so Sift can request permission to create private playlists."
+        : undefined;
+    res.status(status).json({
+      error: needsReconnect || err.message || String(e),
+      reconnectSpotify: !!needsReconnect,
+      playlistId: createdPlaylist?.id,
+      playlistUrl: createdPlaylist?.url,
+    });
+  }
+});
+
+app.post("/api/liked-songs-playlist/:playlistId/tracks", guard, async (req, res) => {
+  try {
+    const rawPlaylistId = typeof req.params.playlistId === "string" ? req.params.playlistId.trim() : "";
+    if (!/^[A-Za-z0-9]{15,}$/.test(rawPlaylistId)) {
+      res.status(400).json({ error: "Invalid Spotify playlist id." });
+      return;
+    }
+
+    const trackIds = playlistTrackIdsFromBody(req.body);
+    if (trackIds.length === 0) {
+      res.status(400).json({ error: "No valid Spotify track IDs to add." });
+      return;
+    }
+
+    const uris = trackIds.map((id) => `spotify:track:${id}`);
+    let addedTrackCount = 0;
+    for (let i = 0; i < uris.length; i += 100) {
+      const chunk = uris.slice(i, i + 100);
+      const added = (await postSpotifyJson(`playlists/${encodeURIComponent(rawPlaylistId)}/items`, req.session, {
+        position: i,
+        uris: chunk,
+      })) as SpotifyAddTracksResult;
+      if (!added.snapshot_id) {
+        throw new Error("Spotify did not confirm tracks were added to the playlist.");
+      }
+      addedTrackCount += chunk.length;
+    }
+
+    res.json({
+      trackCount: trackIds.length,
+      addedTrackCount,
+    });
+  } catch (e) {
+    const err = e as HttpError;
+    const status = typeof err.status === "number" ? err.status : 500;
+    const needsReconnect =
+      status === 401 || status === 403
+        ? "Reconnect Spotify so Sift can request permission to create private playlists."
+        : undefined;
+    res.status(status).json({ error: needsReconnect || err.message || String(e), reconnectSpotify: !!needsReconnect });
   }
 });
 
