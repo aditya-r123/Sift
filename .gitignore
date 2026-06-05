@@ -26,6 +26,9 @@ npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
 
+# Local QA / debug screenshots (not for the repo)
+.qa-screenshots/
+
 # Caches and generated state
 .vite/
 .turbo/

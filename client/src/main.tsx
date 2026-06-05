@@ -1,6 +1,6 @@
-import { inject } from "@vercel/analytics";
 import { useEffect, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
+import { inject } from "@vercel/analytics";
 
 import {
   DesktopDiscover,
@@ -20,7 +20,9 @@ import logoUrl from "./logo.png";
 
 import "./design/sift-design-system.css";
 
-inject();
+if (!["127.0.0.1", "localhost"].includes(window.location.hostname)) {
+  inject();
+}
 
 type AccountUser = {
   displayName?: string;
@@ -219,17 +221,20 @@ function ResponsiveSiftApp() {
   const scale = Math.min(w / 390, h / 844, 1);
   const mobileProps = { onNavigate: navigate };
   return (
-    <main className="sift-responsive-mobile" style={appStyles.mobileHost}>
-      <style>{`.sift-responsive-mobile .phone{border-radius:0!important;box-shadow:none!important}`}</style>
-      <div style={{ width: 390 * scale, height: 844 * scale, overflow: "hidden" }}>
-        <div style={{ width: 390, height: 844, transform: `scale(${scale})`, transformOrigin: "top left" }}>
-          {route === "discover" && <MobileDiscover variant="rich" {...mobileProps} />}
-          {route === "explore" && <MobileExplore {...mobileProps} />}
-          {route === "friends" && <MobileFriends {...mobileProps} />}
-          {route === "profile" && <MobileProfile {...mobileProps} />}
+    <>
+      <main className="sift-responsive-mobile" style={appStyles.mobileHost}>
+        <style>{`.sift-responsive-mobile .phone{border-radius:0!important;box-shadow:none!important}`}</style>
+        <div style={{ width: 390 * scale, height: 844 * scale, overflow: "hidden" }}>
+          <div style={{ width: 390, height: 844, transform: `scale(${scale})`, transformOrigin: "top left" }}>
+            {route === "discover" && <MobileDiscover variant="rich" {...mobileProps} />}
+            {route === "explore" && <MobileExplore {...mobileProps} />}
+            {route === "friends" && <MobileFriends {...mobileProps} />}
+            {route === "profile" && <MobileProfile {...mobileProps} />}
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+      {route === "profile" && <AuthenticatedChrome />}
+    </>
   );
 }
 
@@ -298,7 +303,6 @@ function App() {
   return (
     <>
       <ResponsiveSiftApp />
-      {!isDesktop && <AuthenticatedChrome />}
     </>
   );
 }
@@ -307,12 +311,13 @@ const chromeStyles = {
   stack: {
     position: "fixed" as const,
     zIndex: 50,
-    left: 16,
-    bottom: 16,
+    left: 20,
+    right: 20,
+    bottom: 88,
     display: "flex",
-    flexDirection: "column" as const,
-    gap: 6,
-    pointerEvents: "auto" as const,
+    justifyContent: "center",
+    gap: 8,
+    pointerEvents: "none" as const,
   } satisfies React.CSSProperties,
   syncBtn: {
     display: "flex",
@@ -331,19 +336,27 @@ const chromeStyles = {
     color: "#14110f",
     textDecoration: "none",
     cursor: "pointer",
+    pointerEvents: "auto" as const,
   } satisfies React.CSSProperties,
   logoutBtn: {
-    display: "block",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     padding: "6px 14px",
     borderRadius: 999,
-    background: "rgba(20,17,15,.05)",
+    background: "rgba(255,255,255,.82)",
+    backdropFilter: "blur(12px)",
+    WebkitBackdropFilter: "blur(12px)",
+    border: "1px solid rgba(20,17,15,.08)",
+    boxShadow: "0 2px 8px rgba(20,17,15,.06)",
     fontFamily: "var(--font-body)",
-    fontSize: 11,
-    fontWeight: 600,
+    fontSize: 12,
+    fontWeight: 700,
     color: "var(--ink-3)",
     textDecoration: "none",
     textAlign: "center" as const,
     cursor: "pointer",
+    pointerEvents: "auto" as const,
   } satisfies React.CSSProperties,
 };
 

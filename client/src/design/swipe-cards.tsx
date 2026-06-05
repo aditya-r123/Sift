@@ -93,7 +93,7 @@ export function MiniPlayer({
   const play = !!playing;
 
   return (
-    <div data-no-drag style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
+    <div data-no-drag style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", overflow: "hidden" }}>
       <button
         type="button"
         onClick={onToggle}
@@ -432,6 +432,8 @@ export function SwipeCard({
                   borderColor: "var(--hairline)",
                   fontFamily: "var(--font-mono)",
                   fontSize: 11,
+                  flex: "0 0 auto",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {track.bpm} BPM
