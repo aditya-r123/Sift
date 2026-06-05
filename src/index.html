@@ -178,6 +178,27 @@
               <span class="tab__label">Friends</span>
             </span>
           </button>
+          <button type="button" class="tab" role="tab" id="tab-liked-btn" aria-selected="false" aria-controls="panel-liked">
+            <span class="tab__inner">
+              <svg
+                class="tab__icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M9 18V5l12-2v13" />
+                <circle cx="6" cy="18" r="3" />
+                <circle cx="18" cy="16" r="3" />
+                <path d="M20.8 21.7 19.4 23 18 21.7a1.8 1.8 0 0 1 2.8-2.2 1.8 1.8 0 0 1 2.8 2.2L22.2 23l-1.4-1.3z" />
+              </svg>
+              <span class="tab__label">Liked Songs</span>
+            </span>
+          </button>
           <button type="button" class="tab" role="tab" id="tab-profile-btn" aria-selected="false" aria-controls="panel-profile">
             <span class="tab__inner">
               <svg
@@ -221,6 +242,11 @@
           <div class="tab-panel" role="tabpanel" id="panel-friends" aria-labelledby="tab-friends-btn" hidden>
             <h2 class="panel-heading">Friends</h2>
             <p class="muted">Add new friends, view their profile, and get reccomended songs based on their listening habits.</p>
+          </div>
+
+          <div class="tab-panel" role="tabpanel" id="panel-liked" aria-labelledby="tab-liked-btn" hidden>
+            <h2 class="panel-heading">Liked Songs</h2>
+            <p class="muted">Browse every song you have swiped right on.</p>
           </div>
 
           <div class="tab-panel" role="tabpanel" id="panel-profile" aria-labelledby="tab-profile-btn" hidden>
