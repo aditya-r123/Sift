@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useTransform, PanInfo } from 'motion/react';
 import { Heart, X } from 'lucide-react';
+import { recordSwipeAndUpdateTaste, scoreSavedSwipe } from '../recommendations.js';
 import { supabase } from '../supabase.js';
 import { songs, type Song } from '../songs.js';
-import { formatDuration, loadCardCoverMedia, loadGeneratedSongs, mergeSongMedia } from '../trackCards.js';
+import {
+  formatDuration,
+  loadCardCoverMedia,
+  loadDiscoverRecommendationSongs,
+  loadGeneratedSongs,
+  mergeSongMedia,
+} from '../trackCards.js';
 
 const BATCH_SIZE = 5;
 
@@ -32,6 +39,7 @@ export function DiscoverPage() {
   const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const mediaRefreshKey = useRef('');
+  const loadedUserIdRef = useRef<string | null | undefined>(undefined);
 
   // ref so recordSwipe always sees the latest state without stale closures
   const stateRef = useRef({ seenIds, tagScores, batchSwipes, currentBatch, sourceSongs });
@@ -66,53 +74,71 @@ export function DiscoverPage() {
       }
 
       try {
-        const { data, error } = await supabase
-          .from('swipes')
-          .select('song_id, direction')
-          .eq('user_id', userId);
-        if (error) throw error;
+        const batch = await loadDiscoverRecommendationSongs(userId, BATCH_SIZE);
+        if (!cancelled) {
+          setSourceSongs(cards);
+          setSeenIds(new Set());
+          setTagScores({});
+          setCurrentBatch(batch);
+          setBatchSwipes({});
+        }
+      } catch (error) {
+        console.warn('Failed to load Discover recommendations:', error);
 
-        const seen = new Set<string>();
-        const scores: Record<string, number> = {};
+        try {
+          const { data, error: swipesError } = await supabase
+            .from('swipes')
+            .select('song_id, direction')
+            .eq('user_id', userId);
+          if (swipesError) throw swipesError;
 
-        for (const row of data ?? []) {
-          seen.add(row.song_id as string);
-          const song = cards.find((s) => s.id === row.song_id);
-          if (song) {
-            const delta = row.direction === 'right' ? 1 : -0.5;
-            for (const tag of song.tags) {
-              scores[tag] = (scores[tag] ?? 0) + delta;
+          const seen = new Set<string>();
+          const scores: Record<string, number> = {};
+
+          for (const row of data ?? []) {
+            seen.add(row.song_id as string);
+            const song = cards.find((s) => s.id === row.song_id);
+            if (song) {
+              const delta = scoreSavedSwipe(row.direction as string);
+              for (const tag of song.tags) {
+                scores[tag] = (scores[tag] ?? 0) + delta;
+              }
             }
           }
-        }
 
-        if (!cancelled) {
-          setSourceSongs(cards);
-          setSeenIds(seen);
-          setTagScores(scores);
-          startBatch(cards, seen, scores);
-        }
-      } catch {
-        // swipe history unavailable — just start fresh
-        if (!cancelled) {
-          setSourceSongs(cards);
-          startBatch(cards, new Set(), {});
+          if (!cancelled) {
+            setSourceSongs(cards);
+            setSeenIds(seen);
+            setTagScores(scores);
+            startBatch(cards, seen, scores);
+          }
+        } catch {
+          // swipe history unavailable — just start fresh
+          if (!cancelled) {
+            setSourceSongs(cards);
+            startBatch(cards, new Set(), {});
+          }
         }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
+    function loadForSession(userId: string | null) {
+      setMeId(userId);
+      if (loadedUserIdRef.current === userId) return;
+      loadedUserIdRef.current = userId;
+      void init(userId);
+    }
+
     supabase.auth.getSession().then(({ data }) => {
       if (cancelled) return;
-      const id = data.session?.user.id ?? null;
-      setMeId(id);
-      void init(id);
+      loadForSession(data.session?.user.id ?? null);
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      const id = session?.user.id ?? null;
-      setMeId(id);
+      if (cancelled) return;
+      loadForSession(session?.user.id ?? null);
     });
 
     return () => {
@@ -125,7 +151,10 @@ export function DiscoverPage() {
     let cancelled = false;
 
     async function refreshMissingMedia() {
-      const songsMissingMedia = sourceSongs.filter((song) => !song.coverImage);
+      const mediaSource = [...sourceSongs, ...currentBatch];
+      const songsMissingMedia = mediaSource.filter(
+        (song, index) => !song.coverImage && mediaSource.findIndex((candidate) => candidate.id === song.id) === index
+      );
       if (songsMissingMedia.length === 0) return;
 
       const key = songsMissingMedia.map((song) => song.id).join(',');
@@ -144,7 +173,7 @@ export function DiscoverPage() {
     return () => {
       cancelled = true;
     };
-  }, [sourceSongs]);
+  }, [sourceSongs, currentBatch]);
 
   const recordSwipe = useCallback(
     async (song: Song, direction: 'left' | 'right') => {
@@ -168,16 +197,23 @@ export function DiscoverPage() {
 
       const userId = meId;
       if (userId) {
-        supabase
-          .from('swipes')
-          .upsert({ user_id: userId, song_id: song.id, direction })
-          .then(({ error }) => {
-            if (error) console.warn('Failed to save swipe:', error.message);
-          });
+        const { error } = await recordSwipeAndUpdateTaste(song.id, 'DISCOVER', direction);
+        if (error) console.warn('Failed to record Discover swipe:', error.message);
       }
 
       if (Object.keys(nextBatchSwipes).length >= batch.length) {
-        startBatch(source, nextSeen, nextScores);
+        if (userId) {
+          try {
+            const nextBatch = await loadDiscoverRecommendationSongs(userId, BATCH_SIZE);
+            setCurrentBatch(nextBatch);
+            setBatchSwipes({});
+          } catch (error) {
+            console.warn('Failed to load next Discover recommendations:', error);
+            startBatch(source, nextSeen, nextScores);
+          }
+        } else {
+          startBatch(source, nextSeen, nextScores);
+        }
       }
     },
     [meId, startBatch]

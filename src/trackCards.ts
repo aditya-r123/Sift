@@ -26,6 +26,21 @@ type TopTrackRow = {
   speechiness: number | null;
 };
 
+type RecommendationRow = {
+  spotify_track_id: string;
+  name: string;
+  artist: string;
+  energy: number | null;
+  danceability: number | null;
+  valence: number | null;
+  acousticness: number | null;
+  speechiness: number | null;
+  match_type?: string | null;
+  top_match_axis?: string | null;
+  recommended_by?: string | null;
+  inverted_axis?: string | null;
+};
+
 export function formatDuration(ms: number | null | undefined): string {
   if (!ms) return '';
   const totalSeconds = Math.round(ms / 1000);
@@ -54,7 +69,7 @@ function tagsForTrack(track: TopTrackRow): string[] {
   return tags.length > 0 ? tags : ['Discover'];
 }
 
-function trackToSong(track: TopTrackRow, media: CardMedia = {}): Song {
+function trackToSong(track: TopTrackRow, media: CardMedia = {}, extraTags: string[] = []): Song {
   return {
     id: track.spotify_track_id,
     title: media.title || track.name,
@@ -62,9 +77,49 @@ function trackToSong(track: TopTrackRow, media: CardMedia = {}): Song {
     album: media.album || track.album,
     releaseYear: media.releaseYear ?? track.release_year,
     durationMs: media.durationMs ?? track.duration_ms,
-    tags: tagsForTrack(track),
+    tags: uniqueTags([...extraTags, ...tagsForTrack(track)]),
     color: songColor(track.spotify_track_id),
     coverImage: media.coverImage || track.cover_url || undefined,
+  };
+}
+
+function uniqueTags(tags: string[]): string[] {
+  return [...new Set(tags.filter((tag) => tag.trim().length > 0))];
+}
+
+function recommendationTags(row: RecommendationRow): string[] {
+  const tags: string[] = [];
+  if (row.match_type === 'friend_like') tags.push(row.recommended_by ? `Friend: ${row.recommended_by}` : 'Friend Pick');
+  if (row.match_type === 'wildcard') tags.push('Wildcard');
+  if (row.match_type === 'exploit') tags.push('Taste Match');
+  if (row.match_type === 'opposite') tags.push('Explore');
+  if (row.top_match_axis) tags.push(`Matches ${humanizeAxis(row.top_match_axis)}`);
+  if (row.inverted_axis) tags.push(`Opposite ${humanizeAxis(row.inverted_axis)}`);
+  return tags;
+}
+
+function humanizeAxis(axis: string): string {
+  return axis
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function recommendationRowToTrack(row: RecommendationRow, index: number): TopTrackRow {
+  return {
+    spotify_track_id: row.spotify_track_id,
+    rank: index + 1,
+    name: row.name,
+    artist: row.artist,
+    album: '',
+    release_year: null,
+    duration_ms: null,
+    cover_url: null,
+    energy: row.energy,
+    danceability: row.danceability,
+    valence: row.valence,
+    acousticness: row.acousticness,
+    speechiness: row.speechiness,
   };
 }
 
@@ -113,4 +168,55 @@ export async function loadGeneratedSongs(limit = 100): Promise<Song[]> {
   if (tracks.length === 0) return [];
 
   return tracks.map((track) => trackToSong(track));
+}
+
+async function loadTopTracksByIds(trackIds: string[]): Promise<Map<string, TopTrackRow>> {
+  const tracksById = new Map<string, TopTrackRow>();
+  if (trackIds.length === 0) return tracksById;
+
+  const { data, error } = await supabase
+    .from('top_tracks')
+    .select('spotify_track_id, rank, name, artist, album, release_year, duration_ms, cover_url, energy, danceability, valence, acousticness, speechiness')
+    .in('spotify_track_id', trackIds);
+
+  if (error) {
+    console.warn('Failed to load recommended card details:', error.message);
+    return tracksById;
+  }
+
+  for (const track of (data ?? []) as TopTrackRow[]) {
+    tracksById.set(track.spotify_track_id, track);
+  }
+
+  return tracksById;
+}
+
+async function recommendationRowsToSongs(rows: RecommendationRow[]): Promise<Song[]> {
+  const trackIds = rows.map((row) => row.spotify_track_id);
+  const [tracksById, mediaById] = await Promise.all([loadTopTracksByIds(trackIds), loadCardCoverMedia(trackIds)]);
+
+  return rows.map((row, index) => {
+    const track = tracksById.get(row.spotify_track_id) ?? recommendationRowToTrack(row, index);
+    return trackToSong(track, mediaById.get(row.spotify_track_id), recommendationTags(row));
+  });
+}
+
+export async function loadDiscoverRecommendationSongs(userId: string, limit = 5): Promise<Song[]> {
+  const { data, error } = await supabase.rpc('get_discover_batch', {
+    p_user_id: userId,
+    p_limit: limit,
+  });
+  if (error) throw error;
+
+  return recommendationRowsToSongs((data ?? []) as RecommendationRow[]);
+}
+
+export async function loadExploreRecommendationSongs(userId: string, limit = 5): Promise<Song[]> {
+  const { data, error } = await supabase.rpc('get_explore_batch', {
+    p_user_id: userId,
+    p_limit: limit,
+  });
+  if (error) throw error;
+
+  return recommendationRowsToSongs((data ?? []) as RecommendationRow[]);
 }

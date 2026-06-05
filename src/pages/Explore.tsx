@@ -1,36 +1,78 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useTransform, PanInfo } from 'motion/react';
+import { recordSwipeAndUpdateTaste } from '../recommendations.js';
 import { songs as fallbackSongs, type Song } from '../songs.js';
-import { formatDuration, loadCardCoverMedia, loadGeneratedSongs, mergeSongMedia } from '../trackCards.js';
+import {
+  formatDuration,
+  loadCardCoverMedia,
+  loadExploreRecommendationSongs,
+  loadGeneratedSongs,
+  mergeSongMedia,
+} from '../trackCards.js';
 import { supabase } from '../supabase.js';
+
+const BATCH_SIZE = 5;
 
 export function ExplorePage() {
   const [songs, setSongs] = useState<Song[]>(fallbackSongs);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [meId, setMeId] = useState<string | null>(null);
   const mediaRefreshKey = useRef('');
+  const loadedUserIdRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function init() {
+    async function loadFallbackCards() {
+      const generated = await loadGeneratedSongs();
+      return generated.length > 0 ? generated : fallbackSongs;
+    }
+
+    async function init(userId: string | null) {
+      setLoading(true);
       try {
-        const generated = await loadGeneratedSongs();
-        if (!cancelled && generated.length > 0) {
-          setSongs(generated);
+        const cards = userId ? await loadExploreRecommendationSongs(userId, BATCH_SIZE) : await loadFallbackCards();
+        if (!cancelled) {
+          setSongs(cards);
           setCurrentIndex(0);
         }
       } catch (error) {
-        console.warn('Failed to load explore cards:', error);
+        console.warn('Failed to load Explore recommendations:', error);
+        try {
+          const cards = await loadFallbackCards();
+          if (!cancelled) {
+            setSongs(cards);
+            setCurrentIndex(0);
+          }
+        } catch (fallbackError) {
+          console.warn('Failed to load explore cards:', fallbackError);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
-    void init();
+    function loadForSession(userId: string | null) {
+      setMeId(userId);
+      if (loadedUserIdRef.current === userId) return;
+      loadedUserIdRef.current = userId;
+      void init(userId);
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (cancelled) return;
+      loadForSession(data.session?.user.id ?? null);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (cancelled) return;
+      loadForSession(session?.user.id ?? null);
+    });
 
     return () => {
       cancelled = true;
+      sub.subscription.unsubscribe();
     };
   }, []);
 
@@ -57,32 +99,30 @@ export function ExplorePage() {
       cancelled = true;
     };
   }, [songs]);
-  const [meId, setMeId] = useState<string | null>(null);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setMeId(data.session?.user.id ?? null);
-    });
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setMeId(session?.user.id ?? null);
-    });
-
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  const removeCard = (direction: 'left' | 'right') => {
+  const removeCard = async (direction: 'left' | 'right') => {
     if (currentIndex < songs.length) {
       const song = songs[currentIndex];
-      setCurrentIndex(currentIndex + 1);
+      const nextIndex = currentIndex + 1;
+      setCurrentIndex(nextIndex);
 
-      if (meId) {
-        supabase
-          .from('swipes')
-          .upsert({ user_id: meId, song_id: song.id, direction })
-          .then(({ error }) => {
-            if (error) console.warn('Failed to save swipe:', error.message);
-          });
+      const userId = meId;
+      if (userId) {
+        const { error } = await recordSwipeAndUpdateTaste(song.id, 'EXPLORE', direction);
+        if (error) console.warn('Failed to record Explore swipe:', error.message);
+      }
+
+      if (userId && nextIndex >= songs.length) {
+        setLoading(true);
+        try {
+          const nextBatch = await loadExploreRecommendationSongs(userId, BATCH_SIZE);
+          setSongs(nextBatch);
+          setCurrentIndex(0);
+        } catch (error) {
+          console.warn('Failed to load next Explore recommendations:', error);
+        } finally {
+          setLoading(false);
+        }
       }
     }
   };
