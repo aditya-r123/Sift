@@ -9,6 +9,7 @@ const FEATURE_ROWS = [
   { key: 'danceability', label: 'Dance', color: 'var(--c-dance)' },
   { key: 'valence', label: 'Mood', color: 'var(--c-valence)' },
   { key: 'acousticness', label: 'Acoustic', color: 'var(--c-acoustic)' },
+  { key: 'speechiness', label: 'Speech', color: 'var(--c-speech)' },
 ] as const;
 
 /** Color-code a tag by its category so genres, audio features, moods and recommendation sources read at a glance. */
@@ -132,8 +133,9 @@ export function SwipeCard({
             <div
               className="sift-cover-fallback"
               style={{ backgroundColor: song.color }}
+              aria-hidden="true"
             >
-              <div className="sift-cover-fallback-mark" />
+              <span className="sift-cover-fallback-initial">{song.title.charAt(0) || '♪'}</span>
             </div>
           )}
         </div>
@@ -145,9 +147,9 @@ export function SwipeCard({
         </div>
 
         {features.length > 0 && (
-          <div className="sift-feature-grid" aria-label="Audio profile">
+          <div className="sift-feature-stack" aria-label="Audio profile">
             {features.map((feature) => (
-              <div key={feature.key} className="sift-feature">
+              <div key={feature.key} className="sift-feature" aria-label={`${feature.label} ${feature.value}`}>
                 <div className="sift-feature-label">
                   <span>{feature.label}</span>
                   <span>{feature.value}</span>

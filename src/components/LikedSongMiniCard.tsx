@@ -26,12 +26,12 @@ export function LikedSongMiniCard({ song }: { song: LikedSong }) {
         <img
           src={song.coverImage}
           alt={`${song.title} cover`}
-          className="w-20 h-20 rounded-xl object-cover flex-shrink-0"
+          className="w-20 aspect-square rounded-xl object-cover flex-shrink-0"
           loading="lazy"
         />
       ) : (
         <div
-          className="w-20 h-20 rounded-xl flex items-center justify-center flex-shrink-0"
+          className="w-20 aspect-square rounded-xl flex items-center justify-center flex-shrink-0"
           style={{ backgroundColor: song.color }}
         >
           <Heart className="w-8 h-8 text-white/65" />
