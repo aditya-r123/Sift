@@ -240,6 +240,35 @@ async function fetchExtendedAudioFeatures(trackId: string): Promise<{ body: unkn
   throw lastErr || new Error("RapidAPI request failed");
 }
 
+/*
+[GenAI Use] Prompt
+Add the five taste-profile feature keys and a helper that safely reads one
+[0,1] numeric feature out of a RapidAPI audio-features body, handling cases
+where the body is an array or wraps the features under data/audio_features.
+*/
+
+/* [GenAI Use] LLM Response Start*/
+// The five audio features that make up a taste profile (see taste_profiles table).
+const TASTE_FEATURE_KEYS = ["energy", "danceability", "valence", "acousticness", "speechiness"] as const;
+type TasteFeatureKey = (typeof TASTE_FEATURE_KEYS)[number];
+type TasteFeatures = Record<TasteFeatureKey, number>;
+
+/** Pull a single [0,1] numeric audio feature out of a (possibly wrapped) RapidAPI body. */
+function readFeature(body: unknown, key: TasteFeatureKey): number | null {
+  let obj = body;
+  if (Array.isArray(obj)) obj = obj[0];
+  if (obj && typeof obj === "object") {
+    const rec = obj as Record<string, unknown>;
+    // Some providers nest the features under a `data`/`audio_features` envelope.
+    const inner = (rec.data ?? rec.audio_features ?? rec.features) as unknown;
+    if (rec[key] === undefined && inner && typeof inner === "object") rec[key] = (inner as Record<string, unknown>)[key];
+    const v = rec[key];
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1) return v;
+  }
+  return null;
+}
+/* [GenAI Use] LLM Response End*/
+
 const SCOPES = [
   "user-read-email",
   "user-read-private",
@@ -406,6 +435,64 @@ app.get("/api/recently-played", guard, async (req, res) => {
     res.status(status).json({ error: err.message || String(e) });
   }
 });
+
+/*
+[GenAI Use] Prompt
+Add a guarded GET /api/taste-seed endpoint that builds an initial taste profile.
+Fetch the user's top 10 Spotify tracks, get each track's RapidAPI audio features,
+and average the five taste features. Skip tracks that error or lack features, and
+return the averages plus a sampleSize count (the client saves them via the RPC).
+*/
+
+/* [GenAI Use] LLM Response Start*/
+app.get("/api/taste-seed", guard, async (req, res) => {
+  try {
+    const top = (await fetchSpotify("me/top/tracks?limit=10&time_range=medium_term", req.session)) as {
+      items?: Array<{ id?: string }>;
+    };
+    const ids = (top.items ?? []).map((t) => t?.id).filter((id): id is string => typeof id === "string" && id.length > 0);
+
+    const sums: TasteFeatures = { energy: 0, danceability: 0, valence: 0, acousticness: 0, speechiness: 0 };
+    let sampleSize = 0;
+
+    // Sequential to stay under RapidAPI burst limits; 10 calls max.
+    for (const id of ids) {
+      try {
+        const { body } = await fetchExtendedAudioFeatures(id);
+        const values = {} as TasteFeatures;
+        let complete = true;
+        for (const key of TASTE_FEATURE_KEYS) {
+          const v = readFeature(body, key);
+          if (v === null) {
+            complete = false;
+            break;
+          }
+          values[key] = v;
+        }
+        if (!complete) continue;
+        for (const key of TASTE_FEATURE_KEYS) sums[key] += values[key];
+        sampleSize += 1;
+      } catch {
+        // Skip tracks that fail (rate limit, 404, missing features) and keep going.
+        continue;
+      }
+    }
+
+    if (sampleSize === 0) {
+      res.json({ sampleSize: 0 });
+      return;
+    }
+
+    const averages = {} as TasteFeatures;
+    for (const key of TASTE_FEATURE_KEYS) averages[key] = sums[key] / sampleSize;
+    res.json({ ...averages, sampleSize });
+  } catch (e) {
+    const err = e as HttpError;
+    const status = typeof err.status === "number" ? err.status : 500;
+    res.status(status).json({ error: err.message || String(e) });
+  }
+});
+/* [GenAI Use] LLM Response End*/
 
 app.get("/api/auth-status", async (req, res) => {
   let spotifyConnected = hasSpotifySession(req.session);

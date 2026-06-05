@@ -3,6 +3,7 @@ import { createElement, type ComponentType } from "react";
 import { createRoot } from "react-dom/client";
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase.js';
+import { setInitialTasteProfile, type TasteFeatures } from './recommendations.js';
 
 inject();
 
@@ -534,10 +535,54 @@ function accountUserFromSession(session: Session): AccountUser {
   return { displayName, email: session.user.email || "" };
 }
 
+/*
+[GenAI Use] Prompt
+After a successful Spotify connect, seed the user's taste profile once. Add a
+one-shot flag and a seedTasteProfileFromSpotify function that fetches the
+averaged features from /api/taste-seed and saves them via setInitialTasteProfile.
+Skip if no usable features, and don't let failures block loading Spotify content.
+*/
+
+/* [GenAI Use] LLM Response Start*/
+// Set when the user has just returned from a successful Spotify OAuth connect,
+// so we seed the taste profile exactly once (not on every authenticated load).
+let pendingSpotifySeed = false;
+
+async function seedTasteProfileFromSpotify() {
+  try {
+    const seed = (await fetchJson("/api/taste-seed")) as Partial<TasteFeatures> & { sampleSize?: number };
+    if (
+      !seed.sampleSize ||
+      typeof seed.energy !== "number" ||
+      typeof seed.danceability !== "number" ||
+      typeof seed.valence !== "number" ||
+      typeof seed.acousticness !== "number" ||
+      typeof seed.speechiness !== "number"
+    ) {
+      return; // No usable top-track features; leave the existing profile as-is.
+    }
+    const { error } = await setInitialTasteProfile({
+      energy: seed.energy,
+      danceability: seed.danceability,
+      valence: seed.valence,
+      acousticness: seed.acousticness,
+      speechiness: seed.speechiness,
+    });
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    showError(e instanceof Error ? e.message : String(e));
+  }
+}
+/* [GenAI Use] LLM Response End*/
+
 async function loadSpotifyState() {
   try {
     const status = (await fetchJson("/api/auth-status")) as { spotifyConnected?: boolean };
     if (status.spotifyConnected) {
+      if (pendingSpotifySeed) {
+        pendingSpotifySeed = false;
+        await seedTasteProfileFromSpotify();
+      }
       await loadSpotifyContent();
       qs("#tab-profile-btn")?.click();
       return;
@@ -653,7 +698,9 @@ async function bootstrap() {
   if (hash.startsWith("error=")) {
     showError(decodeURIComponent(hash.slice("error=".length)));
     history.replaceState(null, "", location.pathname + location.search);
-  } else if (hash === "connected") {
+  } else if (hash === "connected" || hash === "/connected") {
+    // Returned from a successful Spotify connect — seed the taste profile once.
+    pendingSpotifySeed = true;
     history.replaceState(null, "", location.pathname + location.search);
   }
 
