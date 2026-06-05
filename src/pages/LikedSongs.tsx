@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Heart, SlidersHorizontal } from 'lucide-react';
+import { ExternalLink, Heart, ListPlus, RefreshCw, SlidersHorizontal } from 'lucide-react';
 import { LikedSongMiniCard, type LikedSong } from '../components/LikedSongMiniCard.js';
 import { LikedSongsControls, type LikedSongsSortMode } from '../components/LikedSongsControls.js';
 import { supabase } from '../supabase.js';
@@ -10,6 +10,15 @@ type SwipeRow = {
   song_id: string;
   swiped_at: string | null;
   source?: string | null;
+};
+
+type PlaylistCreateResult = {
+  playlistId?: string;
+  playlistUrl?: string;
+  trackCount?: number;
+  addedTrackCount?: number;
+  error?: string;
+  reconnectSpotify?: boolean;
 };
 
 function errorMessage(e: unknown): string {
@@ -53,6 +62,8 @@ export function LikedSongsPage() {
   const [artistFilter, setArtistFilter] = useState('all');
   const [yearFilter, setYearFilter] = useState('all');
   const [sortMode, setSortMode] = useState<LikedSongsSortMode>('newest');
+  const [playlistCreating, setPlaylistCreating] = useState(false);
+  const [playlistResult, setPlaylistResult] = useState<PlaylistCreateResult | null>(null);
   const mediaRefreshKey = useRef('');
 
   useEffect(() => {
@@ -179,6 +190,82 @@ export function LikedSongsPage() {
     });
   }, [artistFilter, likedSongs, query, sortMode, yearFilter]);
 
+  async function createSpotifyPlaylist() {
+    if (playlistCreating || likedSongs.length === 0) return;
+    setPlaylistCreating(true);
+    setPlaylistResult(null);
+    try {
+      const res = await fetch('/api/liked-songs-playlist', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Sift Liked Songs',
+          trackIds: likedSongs.map((song) => song.id),
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as PlaylistCreateResult;
+      if (!res.ok) {
+        setPlaylistResult({
+          ...payload,
+          error: payload.error || res.statusText,
+        });
+        return;
+      }
+      setPlaylistResult(payload);
+    } catch (e) {
+      setPlaylistResult({ error: errorMessage(e) });
+    } finally {
+      setPlaylistCreating(false);
+    }
+  }
+
+  async function retryAddTracksToPlaylist(playlistId: string) {
+    if (playlistCreating || likedSongs.length === 0) return;
+    setPlaylistCreating(true);
+    try {
+      const res = await fetch(`/api/liked-songs-playlist/${encodeURIComponent(playlistId)}/tracks`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          trackIds: likedSongs.map((song) => song.id),
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as PlaylistCreateResult;
+      if (!res.ok) {
+        setPlaylistResult((current) => ({
+          ...current,
+          ...payload,
+          error: payload.error || res.statusText,
+        }));
+        return;
+      }
+      setPlaylistResult((current) => ({
+        playlistId,
+        playlistUrl: current?.playlistUrl,
+        trackCount: payload.trackCount,
+        addedTrackCount: payload.addedTrackCount,
+      }));
+    } catch (e) {
+      setPlaylistResult((current) => ({
+        ...current,
+        error: errorMessage(e),
+      }));
+    } finally {
+      setPlaylistCreating(false);
+    }
+  }
+
+  const playlistSucceeded =
+    !!playlistResult?.playlistUrl &&
+    !playlistResult.error &&
+    (playlistResult.addedTrackCount ?? playlistResult.trackCount ?? 0) > 0;
+
   if (!meId) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] px-6 py-8">
@@ -200,13 +287,70 @@ export function LikedSongsPage() {
               {likedSongs.length === 1 ? '1 right-swipe saved' : `${likedSongs.length} right-swipes saved`}
             </p>
           </div>
-          <div className="inline-flex items-center gap-2 text-teal-300 text-sm bg-[#14211f] border border-teal-500/20 rounded-full px-3 py-2 self-start sm:self-auto">
-            <Heart className="w-4 h-4 fill-current" />
-            Swipe archive
+          <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+            <div className="inline-flex items-center gap-2 text-teal-300 text-sm bg-[#14211f] border border-teal-500/20 rounded-full px-3 py-2">
+              <Heart className="w-4 h-4 fill-current" />
+              Swipe archive
+            </div>
+            <button
+              type="button"
+              onClick={() => void createSpotifyPlaylist()}
+              disabled={playlistCreating || likedSongs.length === 0}
+              className="inline-flex items-center gap-2 text-white text-sm bg-[#1a1a1a] hover:bg-[#222] border border-white/10 rounded-full px-3 py-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <ListPlus className="w-4 h-4" />
+              {playlistCreating ? 'Creating...' : 'Make playlist'}
+            </button>
           </div>
         </div>
 
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
+        {playlistResult?.error && (
+          <div className="mb-4 rounded-2xl border border-red-400/20 bg-red-950/30 px-4 py-3">
+            <p className="text-sm text-red-300">{playlistResult.error}</p>
+            {(playlistResult.reconnectSpotify || playlistResult.playlistId) && (
+              <div className="flex flex-wrap gap-3 mt-3">
+                {playlistResult.reconnectSpotify && (
+                  <a
+                    href="/auth/login"
+                    className="inline-flex items-center gap-2 text-sm text-white bg-[#2a2a2a] hover:bg-[#333] rounded-full px-3 py-2"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Reconnect Spotify
+                  </a>
+                )}
+                {playlistResult.playlistId && (
+                  <button
+                    type="button"
+                    onClick={() => void retryAddTracksToPlaylist(playlistResult.playlistId!)}
+                    disabled={playlistCreating}
+                    className="inline-flex items-center gap-2 text-sm text-white bg-[#2a2a2a] hover:bg-[#333] rounded-full px-3 py-2 disabled:opacity-50"
+                  >
+                    <ListPlus className="w-4 h-4" />
+                    {playlistCreating ? 'Adding...' : 'Retry adding songs'}
+                  </button>
+                )}
+                {playlistResult.playlistUrl && (
+                  <a href={playlistResult.playlistUrl} className="inline-flex items-center gap-2 text-sm text-red-200 hover:text-white py-2">
+                    <ExternalLink className="w-4 h-4" />
+                    Open empty playlist
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        {playlistSucceeded && playlistResult?.playlistUrl && (
+          <div className="mb-4 rounded-2xl border border-teal-400/20 bg-teal-950/30 px-4 py-3">
+            <p className="text-sm text-teal-200">
+              Created Spotify playlist with {playlistResult.addedTrackCount ?? playlistResult.trackCount ?? likedSongs.length} songs.
+            </p>
+            <a href={playlistResult.playlistUrl} className="inline-flex items-center gap-2 text-sm text-teal-300 hover:text-teal-100 mt-2">
+              <ExternalLink className="w-4 h-4" />
+              Open Spotify playlist
+            </a>
+          </div>
+        )}
 
         <LikedSongsControls
           artists={artists}
