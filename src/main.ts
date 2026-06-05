@@ -14,6 +14,7 @@ function mountReactPages() {
     ["panel-discover", async () => (await import("./pages/Discover.js")).DiscoverPage],
     ["panel-explore", async () => (await import("./pages/Explore.js")).ExplorePage],
     ["panel-friends", async () => (await import("./pages/Friends.js")).ProfilePage],
+    ["panel-liked", async () => (await import("./pages/LikedSongs.js")).LikedSongsPage],
   ];
 
   for (const [panelId, load] of mounts) {
