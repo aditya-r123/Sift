@@ -147,7 +147,6 @@ export function ExplorePage() {
             <p>Fresh picks</p>
             <h1>Explore</h1>
           </div>
-          <span>{songs.length} real tracks</span>
         </div>
         <div className="sift-deck-frame">
           {loading ? (

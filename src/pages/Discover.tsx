@@ -265,7 +265,6 @@ export function DiscoverPage() {
             <p>For you</p>
             <h1>Discover</h1>
           </div>
-          <span>{sourceSongs.length} real tracks</span>
         </div>
         <div className="sift-deck-frame">
           {visibleCards.length === 0 ? (
