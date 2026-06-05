@@ -1,0 +1,277 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { recordSwipeAndUpdateTaste, scoreSavedSwipe } from '../recommendations.js';
+import { supabase } from '../supabase.js';
+import { songs, type Song } from '../songs.js';
+import {
+  loadCardCoverMedia,
+  loadDiscoverRecommendationSongs,
+  loadGeneratedSongs,
+  mergeSongMedia,
+} from '../trackCards.js';
+import { SwipeCard } from '../components/SwipeCard.js';
+
+const BATCH_SIZE = 15;
+
+function pickNextBatch(
+  sourceSongs: Song[],
+  seenIds: Set<string>,
+  tagScores: Record<string, number>
+): Song[] {
+  const unseen = sourceSongs.filter((s) => !seenIds.has(s.id));
+  if (unseen.length === 0) return [];
+
+  const scored = unseen.map((s) => ({
+    song: s,
+    score: s.tags.reduce((sum, tag) => sum + (tagScores[tag] ?? 0), 0),
+  }));
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, BATCH_SIZE).map((s) => s.song);
+}
+
+export function DiscoverPage() {
+  const [meId, setMeId] = useState<string | null>(null);
+  const [sourceSongs, setSourceSongs] = useState<Song[]>(songs);
+  const [currentBatch, setCurrentBatch] = useState<Song[]>([]);
+  const [batchSwipes, setBatchSwipes] = useState<Record<string, 'left' | 'right'>>({});
+  const [tagScores, setTagScores] = useState<Record<string, number>>({});
+  const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const mediaRefreshKey = useRef('');
+  const loadedUserIdRef = useRef<string | null | undefined>(undefined);
+
+  // ref so recordSwipe always sees the latest state without stale closures
+  const stateRef = useRef({ seenIds, tagScores, batchSwipes, currentBatch, sourceSongs });
+  stateRef.current = { seenIds, tagScores, batchSwipes, currentBatch, sourceSongs };
+
+  const startBatch = useCallback(
+    (source: Song[], seen: Set<string>, scores: Record<string, number>) => {
+      const batch = pickNextBatch(source, seen, scores);
+      setCurrentBatch(batch);
+      setBatchSwipes({});
+    },
+    []
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function init(userId: string | null) {
+      let cards = songs;
+      try {
+        const generated = await loadGeneratedSongs();
+        if (generated.length > 0) cards = generated;
+      } catch (error) {
+        console.warn('Failed to load generated cards:', error);
+      }
+
+      if (!userId) {
+        setSourceSongs(cards);
+        setLoading(false);
+        startBatch(cards, new Set(), {});
+        return;
+      }
+
+      try {
+        const batch = await loadDiscoverRecommendationSongs(userId, BATCH_SIZE);
+        if (!cancelled) {
+          setSourceSongs(cards);
+          setSeenIds(new Set());
+          setTagScores({});
+          setCurrentBatch(batch);
+          setBatchSwipes({});
+        }
+      } catch (error) {
+        console.warn('Failed to load Discover recommendations:', error);
+
+        try {
+          const { data, error: swipesError } = await supabase
+            .from('swipes')
+            .select('song_id, direction')
+            .eq('user_id', userId);
+          if (swipesError) throw swipesError;
+
+          const seen = new Set<string>();
+          const scores: Record<string, number> = {};
+
+          for (const row of data ?? []) {
+            seen.add(row.song_id as string);
+            const song = cards.find((s) => s.id === row.song_id);
+            if (song) {
+              const delta = scoreSavedSwipe(row.direction as string);
+              for (const tag of song.tags) {
+                scores[tag] = (scores[tag] ?? 0) + delta;
+              }
+            }
+          }
+
+          if (!cancelled) {
+            setSourceSongs(cards);
+            setSeenIds(seen);
+            setTagScores(scores);
+            startBatch(cards, seen, scores);
+          }
+        } catch {
+          // swipe history unavailable, just start fresh
+          if (!cancelled) {
+            setSourceSongs(cards);
+            startBatch(cards, new Set(), {});
+          }
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    function loadForSession(userId: string | null) {
+      setMeId(userId);
+      if (loadedUserIdRef.current === userId) return;
+      loadedUserIdRef.current = userId;
+      void init(userId);
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (cancelled) return;
+      loadForSession(data.session?.user.id ?? null);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (cancelled) return;
+      loadForSession(session?.user.id ?? null);
+    });
+
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, [startBatch]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshMissingMedia() {
+      const mediaSource = [...sourceSongs, ...currentBatch];
+      const songsMissingMedia = mediaSource.filter(
+        (song, index) => !song.coverImage && mediaSource.findIndex((candidate) => candidate.id === song.id) === index
+      );
+      if (songsMissingMedia.length === 0) return;
+
+      const key = songsMissingMedia.map((song) => song.id).join(',');
+      if (key === mediaRefreshKey.current) return;
+
+      const mediaById = await loadCardCoverMedia(songsMissingMedia.map((song) => song.id));
+      if (cancelled || mediaById.size === 0) return;
+      mediaRefreshKey.current = key;
+
+      setSourceSongs((current) => current.map((song) => mergeSongMedia(song, mediaById.get(song.id))));
+      setCurrentBatch((current) => current.map((song) => mergeSongMedia(song, mediaById.get(song.id))));
+    }
+
+    void refreshMissingMedia();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceSongs, currentBatch]);
+
+  const recordSwipe = useCallback(
+    async (song: Song, direction: 'left' | 'right') => {
+      const { seenIds: currentSeen, tagScores: currentScores, batchSwipes: currentBatch, currentBatch: batch, sourceSongs: source } =
+        stateRef.current;
+
+      const nextSeen = new Set(currentSeen);
+      nextSeen.add(song.id);
+
+      const delta = direction === 'right' ? 1 : -0.5;
+      const nextScores = { ...currentScores };
+      for (const tag of song.tags) {
+        nextScores[tag] = (nextScores[tag] ?? 0) + delta;
+      }
+
+      const nextBatchSwipes = { ...currentBatch, [song.id]: direction };
+
+      setSeenIds(nextSeen);
+      setTagScores(nextScores);
+      setBatchSwipes(nextBatchSwipes);
+
+      const userId = meId;
+      if (userId) {
+        const { error } = await recordSwipeAndUpdateTaste(song.id, 'DISCOVER', direction);
+        if (error) console.warn('Failed to record Discover swipe:', error.message);
+      }
+
+      if (Object.keys(nextBatchSwipes).length >= batch.length) {
+        if (userId) {
+          try {
+            const nextBatch = await loadDiscoverRecommendationSongs(userId, BATCH_SIZE);
+            setCurrentBatch(nextBatch);
+            setBatchSwipes({});
+          } catch (error) {
+            console.warn('Failed to load next Discover recommendations:', error);
+            startBatch(source, nextSeen, nextScores);
+          }
+        } else {
+          startBatch(source, nextSeen, nextScores);
+        }
+      }
+    },
+    [meId, startBatch]
+  );
+
+  const [topIndex, setTopIndex] = useState(0);
+
+  useEffect(() => {
+    setTopIndex(0);
+  }, [currentBatch]);
+
+  const handleSwipe = useCallback(
+    (song: Song, direction: 'left' | 'right') => {
+      setTopIndex((i) => i + 1);
+      void recordSwipe(song, direction);
+    },
+    [recordSwipe]
+  );
+
+  // Arrow keys mirror swiping/clicking: Left = pass, Right = like.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      const top = currentBatch[topIndex];
+      if (!top) return;
+      event.preventDefault();
+      handleSwipe(top, event.key === 'ArrowRight' ? 'right' : 'left');
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [currentBatch, topIndex, handleSwipe]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <p className="text-gray-500">Loading…</p>
+      </div>
+    );
+  }
+
+  const visibleCards = currentBatch.slice(topIndex, topIndex + 3);
+
+  return (
+    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="w-full max-w-lg px-6 -mt-8">
+        <h1 className="text-3xl font-bold text-white mb-8">Discover</h1>
+        <div className="h-[520px] relative">
+          {visibleCards.length === 0 ? null : (
+            visibleCards.map((song, index) => (
+              <SwipeCard
+                key={song.id}
+                song={song}
+                index={index}
+                isTop={index === 0}
+                onSwipe={(direction) => handleSwipe(song, direction)}
+              />
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

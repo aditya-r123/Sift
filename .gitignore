@@ -4,16 +4,14 @@ node_modules/
 # Build outputs
 dist/
 build/
-client/dist/
-client/build/
 public/
-client/public/
 
 # Environment and secrets
 .env
 .env.*
 !.env.example
 !.env.sample
+.tokens.json
 
 # Local app data
 server/data/
@@ -45,6 +43,7 @@ coverage/
 # Editors and OS files
 .cursor/
 .claude/
+.SUPABASE_SETUP.md
 .vscode/
 .idea/
 .DS_Store

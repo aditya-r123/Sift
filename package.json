@@ -3,19 +3,24 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "dev": "concurrently \"vite --config client/vite.config.ts\" \"tsx watch server/src/index.ts\"",
-    "build": "vite build --config client/vite.config.ts",
-    "start": "tsx server/src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "dev": "concurrently \"vite\" \"tsx watch server/index.ts\"",
+    "build": "vite build",
+    "start": "tsx server/index.ts",
+    "db:new": "supabase migration new",
+    "db:push": "supabase db push",
+    "seed:top-tracks": "tsx scripts/seed-top-tracks.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
     "@vercel/analytics": "^2.0.1",
     "cookie-session": "^2.1.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
-    "lucide-react": "^1.16.0",
-    "mongodb": "^7.2.0",
+    "lucide-react": "^1.14.0",
     "motion": "^12.38.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
@@ -27,10 +32,11 @@
     "@types/node": "^22.10.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.0",
     "postcss": "^8.4.49",
+    "supabase": "^2.98.2",
     "tailwindcss": "^3.4.16",
     "typescript": "^5.7.2",
     "vite": "^6.0.0"
