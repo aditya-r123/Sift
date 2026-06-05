@@ -18,7 +18,8 @@ type UserStore = {
   users: StoredUser[];
 };
 
-const dataDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "data");
+const serverRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const dataDir = path.join(serverRoot, "data");
 const storePath = path.join(dataDir, "users.json");
 
 let storePromise: Promise<UserStore> | null = null;

@@ -16,7 +16,10 @@
     "express": "^4.21.0",
     "lucide-react": "^1.16.0",
     "mongodb": "^7.2.0",
+<<<<<<< Updated upstream
     "motion": "^12.38.0",
+=======
+>>>>>>> Stashed changes
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "tsx": "^4.19.2"
@@ -25,6 +28,9 @@
     "@types/cookie-session": "^2.0.9",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.0",
     "postcss": "^8.4.49",

@@ -1,10 +1,14 @@
-import app, { PORT, SPOTIFY_REDIRECT_URI } from "./app.js";
+import app, { PORT, SPOTIFY_REDIRECT_URI, googleRedirectUri } from "./app.js";
 import { isMongoConfigured, mongoHealth } from "./mongo.js";
 
 const server = app.listen(PORT, () => {
   console.log(`API + static: http://127.0.0.1:${PORT}`);
   if (SPOTIFY_REDIRECT_URI) {
     console.log(`Spotify redirect_uri (must match Dashboard exactly): ${SPOTIFY_REDIRECT_URI}`);
+  }
+  const gr = googleRedirectUri();
+  if (gr && String(process.env.GOOGLE_CLIENT_ID ?? "").trim()) {
+    console.log(`Google OAuth redirect_uri (Google Cloud Console must match): ${gr}`);
   }
   if (isMongoConfigured()) {
     void mongoHealth().then((h) => {

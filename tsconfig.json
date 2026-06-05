@@ -3,12 +3,14 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "noEmit": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node"]
+    "types": ["node", "react", "react-dom"]
   },
-  "include": ["server.ts", "client/**/*.ts", "server/**/*.ts", "shared/**/*.ts"]
+  "include": ["server.ts", "client/**/*.ts", "client/**/*.tsx", "server/**/*.ts", "shared/**/*.ts"]
 }

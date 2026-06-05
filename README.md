@@ -3,9 +3,10 @@
 ## Project layout
 
 ```text
-client/   Browser UI, Vite config, Tailwind styles, and frontend assets.
-server/   Express API (serves API + built static UI), Spotify/RapidAPI, sessions, MongoDB helpers.
-shared/   TypeScript contracts and constants shared by client and server.
+client/           Browser UI, Vite, Tailwind.
+server/src/       Express app (`app.ts`), entry (`index.ts`), users, MongoDB helpers.
+server/data/      Local JSON user store (`users.json`, gitignored; auto-created).
+shared/           TypeScript contracts for client/server.
 ```
 
 ### Prerequisites
@@ -62,6 +63,12 @@ Optional checks:
 npm run typecheck   # TypeScript, no emit
 ```
 
+### Troubleshooting
+
+- **`Port 3001 is already in use`** — Stop whatever is listening (e.g. `lsof -nP -iTCP:3001 -sTCP:LISTEN`), or use another **`PORT`** in `.env` and the same host/port in **`SPOTIFY_REDIRECT_URI`** plus your Spotify Redirect URIs.
+- **Google Sign-In fails or `redirect_uri_mismatch`** — The redirect URL sent to Google is always on the **API** port (default **3001**), e.g. `http://127.0.0.1:3001/auth/google/callback`. Add that **exact** string to **Google Cloud Console → Credentials → your OAuth 2.0 Client → Authorized redirect URIs**. It does **not** use port **5173**. When unsure, start the server and check **`GET /api/oauth-redirect-uri`** (`google_redirect_uri`). Keep **`localhost` vs `127.0.0.1`** consistent with how you browse (session cookie): either use **`http://127.0.0.1:5173`** for the app with **`PUBLIC_APP_ORIGIN=http://127.0.0.1:5173`**, or only use **`localhost`** everywhere and add matching redirect URIs in Google for **`http://localhost:3001/auth/google/callback`**.
+- **`npm start` exits with module not found** — Run **`npm install`** from the repo root; dependencies include **`tsx`** and **`mongodb`**.
+
 ### Environment variables
 
 | Variable | Required | Notes |
@@ -74,8 +81,9 @@ npm run typecheck   # TypeScript, no emit
 | `PORT` | Optional | API port (default **3001**). |
 | `MONGODB_URI` | Optional | Atlas **`mongodb+srv://…`** or local URI; **`/health`** reports status when set. |
 | `MONGODB_DB` | Optional | Database name (default **sift**). |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Optional | For **Sign in with Google**; omit both to disable those routes from working until configured. |
-| `GOOGLE_REDIRECT_URI` | Optional | Override; defaults to **`${PUBLIC_APP_ORIGIN}/auth/google/callback`**. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Optional | For **Sign in with Google**; omit both to disable those routes until configured. |
+| `GOOGLE_REDIRECT_URI` | Optional | Override Google **Authorized redirect URI**. Defaults to **`http://127.0.0.1:<PORT>/auth/google/callback`** (the **API** server, not the Vite port). Must match [Google Cloud Console](https://console.cloud.google.com/apis/credentials) exactly. |
+| `API_PUBLIC_ORIGIN` | Optional | If set, used as the public base URL of the API for OAuth callbacks (when **`GOOGLE_REDIRECT_URI`** is unset). Use when the API is not at **`127.0.0.1:<PORT>`**. |
 | `RAPIDAPI_KEY` | Optional | Tap-a-track insights; app works without it. |
 | `RAPIDAPI_HOST` / `RAPIDAPI_FEATURES_PATH` | Optional | See RapidAPI section below. |
 
@@ -94,7 +102,10 @@ MONGODB_DB=sift
 
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
+# Optional; defaults to http://127.0.0.1:<PORT>/auth/google/callback (API port — not Vite)
 GOOGLE_REDIRECT_URI=
+# Optional; public URL of the API if not http://127.0.0.1:<PORT>
+API_PUBLIC_ORIGIN=
 
 RAPIDAPI_KEY=
 RAPIDAPI_HOST=

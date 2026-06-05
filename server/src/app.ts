@@ -13,8 +13,12 @@ import {
   createEmailUser,
   findOrCreateGoogleUser,
   verifyEmailUser,
+<<<<<<< Updated upstream
 } from "../users.js";
 import type { RecordSwipeRequest } from "../../shared/src/contracts.js";
+=======
+} from "./users.js";
+>>>>>>> Stashed changes
 
 interface HttpError extends Error {
   status?: number;
@@ -50,6 +54,8 @@ const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID ?? "").trim();
 const GOOGLE_CLIENT_SECRET = String(process.env.GOOGLE_CLIENT_SECRET ?? "").trim();
 const GOOGLE_REDIRECT_URI = String(process.env.GOOGLE_REDIRECT_URI ?? "").trim();
 const PUBLIC_APP_ORIGIN = String(process.env.PUBLIC_APP_ORIGIN ?? "").trim();
+/** Where Express is reachable (OAuth callbacks must hit this origin; usually port **PORT**). */
+const API_PUBLIC_ORIGIN = String(process.env.API_PUBLIC_ORIGIN ?? "").trim();
 const NODE_ENV = process.env.NODE_ENV;
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST;
@@ -84,12 +90,18 @@ app.use(
 
 type SessionShape = NonNullable<express.Request["session"]>;
 
-function appOrigin(): string {
-  return PUBLIC_APP_ORIGIN || `http://127.0.0.1:${PORT}`;
+/** Public URL of the API server (OAuth code exchange + callbacks). Not the Vite dev port. */
+function apiPublicOrigin(): string {
+  return API_PUBLIC_ORIGIN || `http://127.0.0.1:${PORT}`;
+}
+
+/** Where the SPA runs — used after OAuth redirects. Defaults to the API origin when unset (e.g. `npm start`). */
+function clientOrigin(): string {
+  return PUBLIC_APP_ORIGIN || apiPublicOrigin();
 }
 
 function googleRedirectUri(): string {
-  return GOOGLE_REDIRECT_URI || `${appOrigin()}/auth/google/callback`;
+  return GOOGLE_REDIRECT_URI || `${apiPublicOrigin()}/auth/google/callback`;
 }
 
 function hasAccountSession(session: SessionShape | null | undefined): boolean {
@@ -258,15 +270,21 @@ app.get("/health", async (_, res) => {
 
 app.get("/api/oauth-redirect-uri", (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
-  const u = SPOTIFY_REDIRECT_URI || "";
+  const spotify = SPOTIFY_REDIRECT_URI || "";
+  const googleUri = googleRedirectUri() || "";
   res.json({
-    redirect_uri: u || null,
+    redirect_uri: spotify || null,
+    google_redirect_uri: googleUri || null,
+    api_public_origin: apiPublicOrigin(),
+    client_origin: clientOrigin(),
     alternate_localhost_vs_loopback:
-      u.includes("127.0.0.1") && !u.includes("localhost")
+      spotify.includes("127.0.0.1") && !spotify.includes("localhost")
         ? "If your dashboard only lists http://localhost:3001/auth/callback, either add BOTH URIs there or change SPOTIFY_REDIRECT_URI to match dashboard exactly."
-        : u.includes("localhost") && !u.includes("127.0.0.1")
+        : spotify.includes("localhost") && !spotify.includes("127.0.0.1")
           ? "If your dashboard lists 127.0.0.1 only, align .env SPOTIFY_REDIRECT_URI or add localhost to the whitelist."
           : "Spotify rejects OAuth when redirect_uri is not identical to one entry in Redirect URIs (including http vs https, host, port, path, trailing slashes). Click Save after editing.",
+    google_hint:
+      "In Google Cloud Console → APIs & Services → Credentials → your OAuth client → Authorized redirect URIs, add the exact value of google_redirect_uri (API port, not the Vite port).",
   });
 });
 
@@ -323,7 +341,7 @@ app.get("/auth/google", (req, res) => {
 });
 
 app.get("/auth/google/callback", async (req, res) => {
-  const frontend = appOrigin();
+  const frontend = clientOrigin();
   try {
     const err = typeof req.query.error === "string" ? req.query.error : "";
     if (err) {
@@ -390,9 +408,15 @@ app.get("/auth/google/callback", async (req, res) => {
   }
 });
 
+/** Alias for older UI / bookmarks; Spotify OAuth starts here — same rules as `/auth/login`. */
+app.get("/auth/spotify", (req, res) => {
+  const q = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+  res.redirect(302, `/auth/login${q}`);
+});
+
 app.get("/auth/login", (req, res) => {
   if (!hasAccountSession(req.session)) {
-    res.redirect(`${appOrigin()}/#/error=${encodeURIComponent("Sign in to your Sift account first.")}`);
+    res.redirect(`${clientOrigin()}/#/error=${encodeURIComponent("Sign in to your Sift account first.")}`);
     return;
   }
   if (!SPOTIFY_CLIENT_ID || !SPOTIFY_REDIRECT_URI) {
@@ -417,7 +441,7 @@ app.get("/auth/login", (req, res) => {
 });
 
 app.get("/auth/callback", async (req, res) => {
-  const frontend = appOrigin();
+  const frontend = clientOrigin();
   try {
     const err = typeof req.query.error === "string" ? req.query.error : "";
     if (err) {
@@ -629,6 +653,12 @@ app.get("/api/track-insights/:trackId", guard, async (req, res) => {
 /** Built UI (`vite build`). Vercel ignores `express.static` for this app bundle; SPA fallback uses `sendFile` from traced `client/public/**` (`vercel.json` includeFiles). */
 const webRoot = resolveWebRoot();
 app.use(express.static(webRoot));
+app.get(["/design", "/design/"], (_req, res, next) => {
+  const p = path.join(webRoot, "design.html");
+  res.sendFile(p, (err) => {
+    if (err) next(err);
+  });
+});
 app.get("*", (req, res, next) => {
   if (req.path.startsWith("/auth") || req.path.startsWith("/api")) {
     res.status(404).type("text").send("Not found");
@@ -640,4 +670,4 @@ app.get("*", (req, res, next) => {
 });
 
 export default app;
-export { PORT, SPOTIFY_REDIRECT_URI };
+export { PORT, SPOTIFY_REDIRECT_URI, googleRedirectUri };

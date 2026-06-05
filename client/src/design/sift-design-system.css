@@ -1,0 +1,640 @@
+/* Sift — Apple Music–inspired design system
+   Light, typographic, big art, generous whitespace.                       */
+
+html,
+body {
+  margin: 0;
+}
+
+:root {
+  /* Surfaces */
+  --bg: #f6f3ee;            /* warm canvas */
+  --paper: #ffffff;         /* card surface */
+  --paper-2: #f3efe7;       /* recessed surface */
+  --hairline: rgba(20, 18, 16, 0.08);
+  --hairline-strong: rgba(20, 18, 16, 0.14);
+
+  /* Ink */
+  --ink: #14110f;
+  --ink-2: #45413c;
+  --ink-3: #807a72;
+  --ink-4: #b3aea4;
+
+  /* Brand & action */
+  --sift: #5b2bd6;          /* sift purple (anchor) */
+  --sift-soft: #efeaff;
+  --love: #ff2d55;          /* Apple-style heart */
+  --love-soft: #ffe8ed;
+  --yes: #18a957;           /* nature green */
+  --yes-soft: #dff5e6;
+  --no: #d93232;
+  --no-soft: #fbe4e4;
+  --warn: #d97706;
+
+  /* Audio chip colors (used in metadata bars) */
+  --c-energy: #ff7849;
+  --c-dance: #ff2d55;
+  --c-valence: #f5b400;
+  --c-acoustic: #2b8a8a;
+  --c-instr: #6f42c1;
+
+  /* Type */
+  --font-display: "Bricolage Grotesque", "SF Pro Display", -apple-system, system-ui, sans-serif;
+  --font-body: "DM Sans", "SF Pro Text", -apple-system, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Radii / shadow */
+  --r-sm: 8px;
+  --r-md: 14px;
+  --r-lg: 22px;
+  --r-xl: 32px;
+  --r-pill: 999px;
+  --sh-1: 0 1px 0 rgba(20, 18, 16, 0.04), 0 6px 18px rgba(20, 18, 16, 0.06);
+  --sh-2: 0 1px 0 rgba(20, 18, 16, 0.05), 0 14px 38px rgba(20, 18, 16, 0.1);
+  --sh-card: 0 30px 60px -20px rgba(20, 18, 16, 0.3), 0 14px 30px -10px rgba(20, 18, 16, 0.18);
+}
+
+/* Reset within Sift surfaces (we are inside design canvas, scope to .sift) */
+.sift,
+.sift * {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.sift {
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: var(--bg);
+  font-size: 14px;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+  height: 100%;
+}
+
+.sift button {
+  font-family: inherit;
+  cursor: pointer;
+}
+.sift input,
+.sift textarea {
+  font-family: inherit;
+}
+
+/* Type roles */
+.sift .t-display {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 0.95;
+}
+.sift .t-h1 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+  font-size: 34px;
+}
+.sift .t-h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  font-size: 24px;
+}
+.sift .t-h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-size: 18px;
+}
+.sift .t-eyebrow {
+  font-family: var(--font-body);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.sift .t-body {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.sift .t-small {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.sift .t-mono {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+/* Common chrome */
+.sift .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--r-pill);
+  background: var(--paper-2);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  border: 1px solid var(--hairline);
+}
+.sift .pill.solid {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+.sift .pill.sift {
+  background: var(--sift-soft);
+  color: var(--sift);
+  border-color: transparent;
+}
+.sift .pill.love {
+  background: var(--love-soft);
+  color: var(--love);
+  border-color: transparent;
+}
+
+.sift .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 18px;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: #fff;
+  border: 0;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.005em;
+  transition:
+    transform 0.12s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.sift .btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--sh-1);
+}
+.sift .btn.ghost {
+  background: transparent;
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+}
+.sift .btn.sift {
+  background: var(--sift);
+}
+.sift .btn.spotify {
+  background: #1ed760;
+  color: #0a0a0a;
+}
+.sift .btn.sm {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+/* Tabs */
+.sift .tabrow {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  border-bottom: 1px solid var(--hairline);
+}
+.sift .tab {
+  position: relative;
+  padding: 14px 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.015em;
+  color: var(--ink-3);
+  background: transparent;
+  border: 0;
+}
+.sift .tab.active {
+  color: var(--ink);
+}
+.sift .tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--ink);
+  border-radius: 2px;
+}
+
+.sift .card {
+  background: var(--paper);
+  border-radius: var(--r-md);
+  border: 1px solid var(--hairline);
+}
+
+/* Non-primary panels: flat / minimal chrome (prefer over stacking many .card wrappers) */
+.sift .surface {
+  background: var(--paper-2);
+  border-radius: var(--r-sm);
+}
+
+.sift .surface-w {
+  background: rgba(255, 255, 255, 0.78);
+}
+
+/* Surfaces stacked on sidebar / muted rails read better as paper surfaces */
+.sift .desk aside .surface {
+  background: var(--paper);
+}
+
+.sift .art {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-1);
+}
+.sift .art.lg {
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-2);
+}
+
+.sift .dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--ink-4);
+  display: inline-block;
+}
+
+.sift .meter {
+  position: relative;
+  height: 6px;
+  background: var(--paper-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.sift .meter > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ink);
+}
+
+.sift .phone {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+  border-radius: 36px;
+}
+.sift .phone .statusbar {
+  height: 44px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 0 24px 6px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+}
+.sift .phone .statusbar .icons {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.sift .tabbar {
+  position: absolute;
+  z-index: 5;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border-radius: 28px;
+  border: 1px solid var(--hairline);
+  box-shadow: var(--sh-1);
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 8px;
+  height: 64px;
+}
+.sift .tabbar button {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--ink-3);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  border-radius: 18px;
+}
+.sift .tabbar button.active {
+  color: var(--ink);
+  background: var(--paper-2);
+}
+.sift .tabbar svg {
+  width: 22px;
+  height: 22px;
+}
+
+.sift .topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px 8px;
+}
+
+.sift .avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper-2);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 800;
+  border-radius: 999px;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.sift .wave {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+}
+.sift .wave i {
+  display: block;
+  width: 3px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.6;
+  animation: waveBob 1.2s ease-in-out infinite;
+}
+.sift .wave i:nth-child(odd) {
+  animation-duration: 1.4s;
+}
+.sift .wave i:nth-child(3n) {
+  animation-duration: 0.9s;
+}
+.sift .wave i:nth-child(4n) {
+  animation-duration: 1.6s;
+}
+@keyframes waveBob {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+.sift .wave.paused i {
+  animation-play-state: paused;
+}
+
+.sift .grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  opacity: 0.18;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.45) 1px, transparent 1.2px);
+  background-size: 3px 3px;
+}
+
+.sift .noscroll::-webkit-scrollbar {
+  display: none;
+}
+.sift .noscroll {
+  scrollbar-width: none;
+}
+
+.sift .stack {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.sift :focus-visible {
+  outline: 2px solid var(--sift);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.sift .bar {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--paper-2);
+  overflow: hidden;
+}
+.sift .bar > span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: inherit;
+}
+
+.sift .section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 18px 10px;
+}
+.sift .section-title .t-h2 {
+  font-size: 22px;
+}
+
+.sift .desk {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  height: 100%;
+  background: var(--bg);
+}
+.sift .desk .sidebar {
+  background: var(--paper-2);
+  border-right: 1px solid var(--hairline);
+  padding: 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+}
+.sift .desk .sidebar .navitem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-weight: 600;
+  color: var(--ink-2);
+  font-size: 14px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  width: 100%;
+}
+.sift .desk .sidebar .navitem.active {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--sh-1);
+}
+.sift .desk .sidebar .navitem:hover:not(.active) {
+  background: rgba(0, 0, 0, 0.04);
+}
+.sift .desk .sidebar .navitem svg {
+  width: 18px;
+  height: 18px;
+}
+
+.sift .sidebar-footer {
+  display: grid;
+  gap: 10px;
+  padding: 0 2px;
+}
+
+.sift .sidebar-sync {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: var(--sh-1);
+}
+
+.sift .sidebar-account {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+  min-width: 0;
+  padding: 0 12px 0 14px;
+}
+
+.sift .sidebar-signout {
+  grid-column: 2;
+  justify-self: start;
+  color: var(--ink-3);
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sift .desk .main {
+  overflow: hidden;
+  position: relative;
+}
+
+.sift .swipe-card {
+  will-change: transform;
+  touch-action: none;
+}
+
+.sift .meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sift .meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+.sift .meta-chip b {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.sift .friend-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--hairline);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  backdrop-filter: blur(10px);
+}
+
+.sift .action {
+  width: 60px;
+  height: 60px;
+  border-radius: 999px;
+  border: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper);
+  box-shadow: var(--sh-2);
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease;
+}
+.sift .action:hover {
+  transform: scale(1.06);
+}
+.sift .action.no {
+  color: var(--no);
+}
+.sift .action.yes {
+  color: var(--yes);
+}
+.sift .action.sm {
+  width: 48px;
+  height: 48px;
+}
+.sift .action svg {
+  width: 26px;
+  height: 26px;
+}
+.sift .action.sm svg {
+  width: 22px;
+  height: 22px;
+}
