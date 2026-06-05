@@ -13,12 +13,8 @@ import {
   createEmailUser,
   findOrCreateGoogleUser,
   verifyEmailUser,
-<<<<<<< Updated upstream
-} from "../users.js";
-import type { RecordSwipeRequest } from "../../shared/src/contracts.js";
-=======
 } from "./users.js";
->>>>>>> Stashed changes
+import type { RecordSwipeRequest } from "../../shared/src/contracts.js";
 
 interface HttpError extends Error {
   status?: number;
