@@ -69,6 +69,7 @@ export function SwipeCard({
   const keepScale = useTransform(x, [36, 112], [0.9, 1]);
   const skipScale = useTransform(x, [-112, -36], [1, 0.9]);
   const activeAnimation = useRef<{ stop: () => void } | null>(null);
+  const exitingRef = useRef(false);
   const [isExiting, setIsExiting] = useState(false);
 
   useEffect(() => {
@@ -99,7 +100,8 @@ export function SwipeCard({
 
   const completeSwipe = useCallback(
     async (direction: 'left' | 'right', velocity = 0) => {
-      if (isExiting) return;
+      if (exitingRef.current) return;
+      exitingRef.current = true;
       setIsExiting(true);
       stopActiveAnimation();
       const viewport = typeof window === 'undefined' ? 900 : window.innerWidth;
@@ -115,7 +117,7 @@ export function SwipeCard({
       await controls;
       onSwipe(direction);
     },
-    [isExiting, onSwipe, stopActiveAnimation, x]
+    [onSwipe, stopActiveAnimation, x]
   );
 
   const handleDragEnd = (_event: PointerEvent, info: PanInfo) => {
@@ -148,6 +150,7 @@ export function SwipeCard({
         scale: 1 - index * 0.05,
       }}
       onDragEnd={handleDragEnd}
+      onDragStart={stopActiveAnimation}
       animate={{
         scale: 1 - index * 0.05,
         y: index * 10,
@@ -209,6 +212,22 @@ export function SwipeCard({
 
         {isTop && <AudioPreview song={song} />}
 
+        {features.length > 0 && (
+          <div className="sift-feature-stack" aria-label="Audio profile">
+            {features.map((feature) => (
+              <div key={feature.key} className="sift-feature" aria-label={`${feature.label} ${feature.value}`}>
+                <div className="sift-feature-label">
+                  <span>{feature.label}</span>
+                  <span>{feature.value}</span>
+                </div>
+                <div className="sift-feature-bar">
+                  <span style={{ width: `${feature.value ?? 0}%`, background: feature.color }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {isTop && (
           <div className="sift-card-actions">
             <button
@@ -227,22 +246,6 @@ export function SwipeCard({
             >
               <Heart className="w-6 h-6" />
             </button>
-          </div>
-        )}
-
-        {features.length > 0 && (
-          <div className="sift-feature-stack" aria-label="Audio profile">
-            {features.map((feature) => (
-              <div key={feature.key} className="sift-feature" aria-label={`${feature.label} ${feature.value}`}>
-                <div className="sift-feature-label">
-                  <span>{feature.label}</span>
-                  <span>{feature.value}</span>
-                </div>
-                <div className="sift-feature-bar">
-                  <span style={{ width: `${feature.value ?? 0}%`, background: feature.color }} />
-                </div>
-              </div>
-            ))}
           </div>
         )}
       </div>
