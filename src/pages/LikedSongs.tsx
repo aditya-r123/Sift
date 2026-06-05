@@ -64,6 +64,8 @@ export function LikedSongsPage() {
   const [sortMode, setSortMode] = useState<LikedSongsSortMode>('newest');
   const [playlistCreating, setPlaylistCreating] = useState(false);
   const [playlistResult, setPlaylistResult] = useState<PlaylistCreateResult | null>(null);
+  const [removingSongIds, setRemovingSongIds] = useState<Set<string>>(() => new Set());
+  const [removeMessage, setRemoveMessage] = useState<string | null>(null);
   const mediaRefreshKey = useRef('');
 
   useEffect(() => {
@@ -258,6 +260,36 @@ export function LikedSongsPage() {
     }
   }
 
+  async function removeLikedSong(song: LikedSong) {
+    if (!meId || removingSongIds.has(song.id)) return;
+
+    setError(null);
+    setRemoveMessage(null);
+    setRemovingSongIds((current) => new Set(current).add(song.id));
+    setLikedSongs((current) => current.filter((candidate) => candidate.id !== song.id));
+
+    try {
+      const { error } = await supabase
+        .from('swipes')
+        .delete()
+        .eq('user_id', meId)
+        .eq('song_id', song.id)
+        .eq('direction', 'YES');
+
+      if (error) throw error;
+      setRemoveMessage(`${song.title} was removed from Liked Songs and can show up again in Discover or Explore.`);
+    } catch (e) {
+      setLikedSongs((current) => (current.some((candidate) => candidate.id === song.id) ? current : [song, ...current]));
+      setError(`Could not remove ${song.title}: ${errorMessage(e)}`);
+    } finally {
+      setRemovingSongIds((current) => {
+        const next = new Set(current);
+        next.delete(song.id);
+        return next;
+      });
+    }
+  }
+
   const playlistSucceeded =
     !!playlistResult?.playlistUrl &&
     !playlistResult.error &&
@@ -302,6 +334,11 @@ export function LikedSongsPage() {
         </div>
 
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
+        {removeMessage && (
+          <div className="mb-4 rounded-2xl border border-teal-400/20 bg-teal-950/30 px-4 py-3">
+            <p className="text-sm text-teal-200">{removeMessage}</p>
+          </div>
+        )}
         {playlistResult?.error && (
           <div className="mb-4 rounded-2xl border border-red-400/20 bg-red-950/30 px-4 py-3">
             <p className="text-sm text-red-300">{playlistResult.error}</p>
@@ -381,7 +418,12 @@ export function LikedSongsPage() {
           <div className="overflow-y-scroll pr-2" style={{ maxHeight: '62vh', scrollbarGutter: 'stable' }}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {filteredSongs.map((song) => (
-                <LikedSongMiniCard key={`${song.id}-${song.swipedAt ?? ''}`} song={song} />
+                <LikedSongMiniCard
+                  key={`${song.id}-${song.swipedAt ?? ''}`}
+                  isRemoving={removingSongIds.has(song.id)}
+                  song={song}
+                  onRemove={removeLikedSong}
+                />
               ))}
             </div>
           </div>

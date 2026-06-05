@@ -122,10 +122,3 @@ revoke execute on function public.record_swipe_and_update_taste(text, text, text
   from anon;
 grant execute on function public.record_swipe_and_update_taste(text, text, text, double precision)
   to authenticated;
-
-/*
-AI-use trail: Added a follow-up migration for the already-applied swipe RPC.
-It recreates record_swipe_and_update_taste with out_* return columns and uses
-ON CONFLICT ON CONSTRAINT swipes_unique_user_song to avoid ambiguous song_id
-resolution inside PL/pgSQL.
-*/

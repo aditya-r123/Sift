@@ -155,11 +155,3 @@ revoke execute on function public.record_swipe_and_update_taste(text, text, text
   from anon;
 grant execute on function public.record_swipe_and_update_taste(text, text, text, double precision)
   to authenticated;
-
-/*
-AI-use trail: Updated record_swipe_and_update_taste to use public.top_tracks
-instead of the dropped public.songs table. The RPC now accepts and returns
-text song IDs keyed by top_tracks.spotify_track_id, removes the uuid-to-text
-swipe insert cast, drops the obsolete uuid signature, and updates privileges
-to the new text/text/text/double precision signature.
-*/

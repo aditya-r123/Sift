@@ -1,4 +1,4 @@
-import { CalendarDays, Heart } from 'lucide-react';
+import { CalendarDays, Heart, Trash2 } from 'lucide-react';
 import { type Song } from '../types.js';
 
 export type LikedSong = Song & {
@@ -17,7 +17,13 @@ function formatLikedDate(value: string | null): string {
   });
 }
 
-export function LikedSongMiniCard({ song }: { song: LikedSong }) {
+type LikedSongMiniCardProps = {
+  isRemoving?: boolean;
+  onRemove?: (song: LikedSong) => void;
+  song: LikedSong;
+};
+
+export function LikedSongMiniCard({ isRemoving = false, onRemove, song }: LikedSongMiniCardProps) {
   const meta = [song.album, song.releaseYear].filter(Boolean).join(' · ');
 
   return (
@@ -45,7 +51,21 @@ export function LikedSongMiniCard({ song }: { song: LikedSong }) {
             <p className="text-gray-400 text-sm truncate">{song.artist}</p>
             {meta && <p className="text-gray-500 text-xs truncate mt-0.5">{meta}</p>}
           </div>
-          <Heart className="w-4 h-4 text-teal-400 fill-current flex-shrink-0 mt-1" />
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <Heart className="w-4 h-4 text-teal-400 fill-current mt-1" />
+            {onRemove && (
+              <button
+                type="button"
+                onClick={() => onRemove(song)}
+                disabled={isRemoving}
+                aria-label={`Remove ${song.title} from liked songs`}
+                title="Remove from liked songs"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:text-red-300 hover:bg-red-400/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-1.5 mt-3">
