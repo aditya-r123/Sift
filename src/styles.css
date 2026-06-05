@@ -1333,22 +1333,27 @@
 }
 
 .sift-cover-stage {
-  flex: 0 1 auto;
-  align-self: center;
-  width: min(72%, 15rem);
-  aspect-ratio: 1;
-  overflow: hidden;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
   border-radius: 18px;
-  background: var(--paper-2);
+  background: transparent;
 }
 
 .sift-cover-image,
 .sift-cover-fallback {
   display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
+  width: auto;
+  height: min(100%, 15.5rem);
+  max-width: min(76%, 15.5rem);
+  aspect-ratio: 1;
+  border-radius: 18px;
   object-fit: cover;
+  box-shadow: 0 18px 42px rgb(0 0 0 / 0.28);
 }
 
 .sift-cover-fallback {
@@ -1407,15 +1412,16 @@
 
 .sift-feature-stack {
   display: grid;
-  gap: 0.24rem;
-  padding: 0.08rem 0.2rem;
+  gap: 0.2rem;
+  padding: 0.04rem 0.12rem 0;
+  flex: 0 0 auto;
 }
 
 .sift-feature {
   display: grid;
-  grid-template-columns: 4.8rem minmax(0, 1fr) 1.6rem;
+  grid-template-columns: 4.7rem minmax(0, 1fr) 1.45rem;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.4rem;
   min-width: 0;
 }
 
@@ -1423,7 +1429,7 @@
   display: contents;
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 0.55rem;
+  font-size: 0.52rem;
   font-weight: 800;
   line-height: 1;
   text-transform: uppercase;
@@ -1443,7 +1449,7 @@
 .sift-feature-bar {
   grid-column: 2;
   grid-row: 1;
-  height: 0.28rem;
+  height: 0.24rem;
   overflow: hidden;
   border-radius: 999px;
   background: rgb(255 255 255 / 0.07);

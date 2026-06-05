@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { motion, useMotionValue, useTransform, PanInfo } from 'motion/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { animate, motion, useMotionValue, useTransform, PanInfo } from 'motion/react';
 import { Heart, X, Play, Pause } from 'lucide-react';
 import { type Song } from '../types.js';
 import { formatDuration, loadTrackPreview } from '../trackCards.js';
@@ -62,17 +62,70 @@ export function SwipeCard({
   onSwipe: (direction: 'left' | 'right') => void;
 }) {
   const x = useMotionValue(0);
-  const rotate = useTransform(x, [-200, 200], [-25, 25]);
-  const opacity = useTransform(x, [-200, -100, 0, 100, 200], [0, 1, 1, 1, 0]);
-  const keepOpacity = useTransform(x, [30, 115], [0, 1]);
-  const skipOpacity = useTransform(x, [-115, -30], [1, 0]);
-  const keepScale = useTransform(x, [30, 115], [0.86, 1]);
-  const skipScale = useTransform(x, [-115, -30], [1, 0.86]);
+  const rotate = useTransform(x, [-260, 0, 260], [-18, 0, 18]);
+  const opacity = useTransform(x, [-360, -220, 0, 220, 360], [0, 1, 1, 1, 0]);
+  const keepOpacity = useTransform(x, [36, 112], [0, 1]);
+  const skipOpacity = useTransform(x, [-112, -36], [1, 0]);
+  const keepScale = useTransform(x, [36, 112], [0.9, 1]);
+  const skipScale = useTransform(x, [-112, -36], [1, 0.9]);
+  const activeAnimation = useRef<{ stop: () => void } | null>(null);
+  const [isExiting, setIsExiting] = useState(false);
+
+  useEffect(() => {
+    return () => activeAnimation.current?.stop();
+  }, []);
+
+  const stopActiveAnimation = useCallback(() => {
+    activeAnimation.current?.stop();
+    activeAnimation.current = null;
+  }, []);
+
+  const springHome = useCallback(
+    async (velocity = 0) => {
+      stopActiveAnimation();
+      const controls = animate(x, 0, {
+        type: 'spring',
+        stiffness: 520,
+        damping: 38,
+        mass: 0.7,
+        velocity,
+      });
+      activeAnimation.current = controls;
+      await controls;
+      if (activeAnimation.current === controls) activeAnimation.current = null;
+    },
+    [stopActiveAnimation, x]
+  );
+
+  const completeSwipe = useCallback(
+    async (direction: 'left' | 'right', velocity = 0) => {
+      if (isExiting) return;
+      setIsExiting(true);
+      stopActiveAnimation();
+      const viewport = typeof window === 'undefined' ? 900 : window.innerWidth;
+      const target = direction === 'right' ? viewport + 260 : -viewport - 260;
+      const controls = animate(x, target, {
+        type: 'spring',
+        stiffness: 220,
+        damping: 26,
+        mass: 0.85,
+        velocity,
+      });
+      activeAnimation.current = controls;
+      await controls;
+      onSwipe(direction);
+    },
+    [isExiting, onSwipe, stopActiveAnimation, x]
+  );
 
   const handleDragEnd = (_event: PointerEvent, info: PanInfo) => {
-    if (Math.abs(info.offset.x) > 100) {
-      onSwipe(info.offset.x > 0 ? 'right' : 'left');
+    if (isExiting) return;
+    const projectedX = info.offset.x + info.velocity.x * 0.16;
+    if (Math.abs(projectedX) > 112) {
+      void completeSwipe(projectedX > 0 ? 'right' : 'left', info.velocity.x);
+      return;
     }
+    void springHome(info.velocity.x);
   };
 
   const meta = [song.album, song.releaseYear, formatDuration(song.durationMs)].filter(Boolean).join(' · ');
@@ -85,6 +138,8 @@ export function SwipeCard({
     <motion.div
       drag={isTop ? 'x' : false}
       dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={0.16}
+      dragMomentum={false}
       style={{
         x: isTop ? x : 0,
         rotate: isTop ? rotate : 0,
@@ -96,6 +151,12 @@ export function SwipeCard({
       animate={{
         scale: 1 - index * 0.05,
         y: index * 10,
+      }}
+      transition={{
+        type: 'spring',
+        stiffness: 360,
+        damping: 32,
+        mass: 0.8,
       }}
       className="sift-swipe-shell absolute inset-0 cursor-grab active:cursor-grabbing"
     >
@@ -146,6 +207,29 @@ export function SwipeCard({
           {meta.length > 0 && <p className="sift-meta">{meta}</p>}
         </div>
 
+        {isTop && <AudioPreview song={song} />}
+
+        {isTop && (
+          <div className="sift-card-actions">
+            <button
+              type="button"
+              onClick={() => void completeSwipe('left')}
+              className="sift-action no"
+              aria-label="Pass"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <button
+              type="button"
+              onClick={() => void completeSwipe('right')}
+              className="sift-action yes"
+              aria-label="Like"
+            >
+              <Heart className="w-6 h-6" />
+            </button>
+          </div>
+        )}
+
         {features.length > 0 && (
           <div className="sift-feature-stack" aria-label="Audio profile">
             {features.map((feature) => (
@@ -159,29 +243,6 @@ export function SwipeCard({
                 </div>
               </div>
             ))}
-          </div>
-        )}
-
-        {isTop && <AudioPreview song={song} />}
-
-        {isTop && (
-          <div className="sift-card-actions">
-            <button
-              type="button"
-              onClick={() => onSwipe('left')}
-              className="sift-action no"
-              aria-label="Pass"
-            >
-              <X className="w-6 h-6" />
-            </button>
-            <button
-              type="button"
-              onClick={() => onSwipe('right')}
-              className="sift-action yes"
-              aria-label="Like"
-            >
-              <Heart className="w-6 h-6" />
-            </button>
           </div>
         )}
       </div>
