@@ -926,3 +926,25 @@
     color: var(--error);
   }
 }
+
+.card-scroll-x {
+  overflow-x: scroll;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: thin;
+  scrollbar-color: #555 transparent;
+}
+
+.card-scroll-x::-webkit-scrollbar {
+  height: 6px;
+  -webkit-appearance: none;
+}
+
+.card-scroll-x::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 3px;
+}
+
+.card-scroll-x::-webkit-scrollbar-track {
+  background: transparent;
+}

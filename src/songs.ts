@@ -10,6 +10,7 @@ export interface Song {
   tags: string[];
   color: string;
   coverImage?: string;
+  previewUrl?: string;
 }
 
 export const songs: Song[] = [

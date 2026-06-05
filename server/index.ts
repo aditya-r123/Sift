@@ -433,7 +433,28 @@ type TrackCardMedia = {
   releaseYear: number | null;
   durationMs: number | null;
   coverImage: string;
+  previewUrl: string;
 };
+
+/** Run an async mapper over items with a bounded concurrency so we don't burst-hit (and get throttled by) iTunes. */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) || 0 }, worker));
+  return results;
+}
+
+/** In-memory cache of iTunes lookups (cover + preview) keyed by Spotify track id, to avoid repeat network calls. */
+const itunesMediaCache = new Map<string, { coverImage: string; previewUrl: string }>();
+
+/** In-memory cache of resolved 30s preview URLs keyed by Spotify track id. */
+const previewUrlCache = new Map<string, string>();
 
 function normalizeComparable(value: string): string {
   return value
@@ -455,6 +476,7 @@ type ITunesSearchResult = {
   artworkUrl100?: string;
   trackTimeMillis?: number;
   releaseDate?: string;
+  previewUrl?: string;
 };
 
 function scoreITunesResult(row: TopTrackMediaLookupRow, result: ITunesSearchResult): number {
@@ -487,24 +509,109 @@ function scoreITunesResult(row: TopTrackMediaLookupRow, result: ITunesSearchResu
   return score;
 }
 
-async function findITunesCover(row: TopTrackMediaLookupRow): Promise<string> {
-  const query = [row.name, row.artist, row.album ?? ""].filter(Boolean).join(" ");
-  const params = new URLSearchParams({
-    term: query,
-    entity: "song",
-    limit: "8",
-  });
+async function searchITunesBest(
+  row: TopTrackMediaLookupRow,
+  term: string
+): Promise<ITunesSearchResult | undefined> {
+  const params = new URLSearchParams({ term, entity: "song", limit: "12" });
   const res = await fetch(`https://itunes.apple.com/search?${params.toString()}`);
-  if (!res.ok) return "";
+  if (!res.ok) return undefined;
 
   const data = (await res.json().catch(() => ({}))) as { results?: ITunesSearchResult[] };
   const best = (data.results ?? [])
-    .filter((result) => result.artworkUrl100)
     .map((result) => ({ result, score: scoreITunesResult(row, result) }))
     .sort((a, b) => b.score - a.score)[0];
 
-  if (!best || best.score < 35 || !best.result.artworkUrl100) return "";
-  return highResolutionITunesArtwork(best.result.artworkUrl100);
+  // Lower-than-cover threshold: a confident title/artist match is enough to trust the preview/art.
+  if (!best || best.score < 30) return undefined;
+  return best.result;
+}
+
+/** Resolve cover art + 30s preview for a track from iTunes, with an in-memory cache and a title+artist fallback query. */
+async function findITunesMedia(
+  row: TopTrackMediaLookupRow
+): Promise<{ coverImage: string; previewUrl: string }> {
+  const cached = itunesMediaCache.get(row.spotify_track_id);
+  if (cached) return cached;
+
+  const queries = [
+    [row.name, row.artist, row.album ?? ""].filter(Boolean).join(" "),
+    [row.name, row.artist].filter(Boolean).join(" "),
+  ];
+
+  let result: ITunesSearchResult | undefined;
+  for (const term of queries) {
+    if (!term) continue;
+    result = await searchITunesBest(row, term);
+    if (result?.artworkUrl100 || result?.previewUrl) break;
+  }
+
+  const media = {
+    coverImage: result?.artworkUrl100 ? highResolutionITunesArtwork(result.artworkUrl100) : "",
+    previewUrl: result?.previewUrl ?? "",
+  };
+  if (media.coverImage || media.previewUrl) itunesMediaCache.set(row.spotify_track_id, media);
+  return media;
+}
+
+type DeezerSearchResult = {
+  title?: string;
+  artist?: { name?: string };
+  album?: { cover_big?: string; cover_xl?: string };
+  preview?: string;
+};
+
+const deezerMediaCache = new Map<string, { coverImage: string; previewUrl: string }>();
+
+/**
+ * Deezer is a free, un-throttled source for both album art (stable 1000x1000 URLs) and 30s previews.
+ * It's the primary fallback because iTunes aggressively rate-limits (429), which is why most covers were missing.
+ */
+async function findDeezerMedia(row: TopTrackMediaLookupRow): Promise<{ coverImage: string; previewUrl: string }> {
+  const cached = deezerMediaCache.get(row.spotify_track_id);
+  if (cached) return cached;
+  const empty = { coverImage: "", previewUrl: "" };
+
+  try {
+    const params = new URLSearchParams({
+      q: [row.name, row.artist].filter(Boolean).join(" "),
+      limit: "8",
+    });
+    const res = await fetch(`https://api.deezer.com/search?${params.toString()}`);
+    if (!res.ok) return empty;
+
+    const data = (await res.json().catch(() => ({}))) as { data?: DeezerSearchResult[] };
+    const rowTitle = normalizeComparable(row.name);
+    const rowArtist = normalizeComparable(row.artist);
+
+    let best: DeezerSearchResult | undefined;
+    let bestScore = -1;
+    for (const result of data.data ?? []) {
+      const resultTitle = normalizeComparable(result.title ?? "");
+      const resultArtist = normalizeComparable(result.artist?.name ?? "");
+      let score = 0;
+      if (resultTitle === rowTitle) score += 50;
+      else if (resultTitle.includes(rowTitle) || rowTitle.includes(resultTitle)) score += 20;
+      for (const part of rowArtist.split(" ").filter((p) => p.length > 2)) {
+        if (resultArtist.includes(part)) score += 4;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = result;
+      }
+    }
+
+    if (!best || bestScore < 20) return empty;
+    const media = {
+      coverImage: best.album?.cover_xl || best.album?.cover_big || "",
+      previewUrl: best.preview || "",
+    };
+    if (media.coverImage || media.previewUrl) deezerMediaCache.set(row.spotify_track_id, media);
+    return media;
+  } catch (error) {
+    console.warn("Failed to load Deezer media:", error);
+    return empty;
+  }
 }
 
 async function coverMediaFromTopTracks(ids: string[]): Promise<TrackCardMedia[]> {
@@ -519,17 +626,38 @@ async function coverMediaFromTopTracks(ids: string[]): Promise<TrackCardMedia[]>
     return [];
   }
 
-  return Promise.all(
-    ((data ?? []) as TopTrackMediaLookupRow[]).map(async (row) => ({
+  // Bounded concurrency keeps us under external rate limits — bursting all lookups at once is why covers were going missing.
+  return mapWithConcurrency((data ?? []) as TopTrackMediaLookupRow[], 6, async (row) => {
+    let coverImage = row.cover_url || "";
+    let previewUrl = previewUrlCache.get(row.spotify_track_id) ?? "";
+
+    // Deezer first: reliable, un-throttled, returns cover + preview in one call.
+    if (!coverImage || !previewUrl) {
+      const deezer = await findDeezerMedia(row);
+      if (!coverImage) coverImage = deezer.coverImage;
+      if (!previewUrl) previewUrl = deezer.previewUrl;
+    }
+
+    // iTunes as a secondary source only for whatever Deezer couldn't resolve.
+    if (!coverImage || !previewUrl) {
+      const itunes = await findITunesMedia(row);
+      if (!coverImage) coverImage = itunes.coverImage;
+      if (!previewUrl) previewUrl = itunes.previewUrl;
+    }
+
+    if (previewUrl) previewUrlCache.set(row.spotify_track_id, previewUrl);
+
+    return {
       id: row.spotify_track_id,
       title: row.name,
       artist: row.artist,
       album: row.album ?? "",
       releaseYear: row.release_year,
       durationMs: row.duration_ms,
-      coverImage: row.cover_url || (await findITunesCover(row)),
-    }))
-  );
+      coverImage,
+      previewUrl,
+    };
+  });
 }
 
 async function cacheTrackMedia(tracks: TrackCardMedia[]): Promise<void> {
