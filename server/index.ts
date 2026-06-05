@@ -54,6 +54,7 @@ const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST;
 const RAPIDAPI_FEATURES_PATH = process.env.RAPIDAPI_FEATURES_PATH;
 const SUPABASE_URL = String(process.env.VITE_SUPABASE_URL ?? "").trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
+const SUPABASE_ANON_KEY = String(process.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
 
 for (const [val, key] of [
   [SPOTIFY_CLIENT_ID, "SPOTIFY_CLIENT_ID"],
@@ -72,6 +73,18 @@ const supabaseAdmin: SupabaseClient | null =
         auth: { persistSession: false, autoRefreshToken: false },
       })
     : null;
+
+// Read-only catalog client: prefer the service role, but fall back to the public anon key
+// (top_tracks has a public-read policy) so cover/preview lookups still work when only the
+// anon key is configured on the deployment — otherwise /api/tracks returns nothing and
+// audio previews show up disabled in production.
+const supabaseRead: SupabaseClient | null =
+  supabaseAdmin ??
+  (SUPABASE_URL && SUPABASE_ANON_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      })
+    : null);
 
 app.use(express.json({ limit: "32kb" }));
 
@@ -450,10 +463,7 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   return results;
 }
 
-/** In-memory cache of iTunes lookups (cover + preview) keyed by Spotify track id, to avoid repeat network calls. */
 const itunesMediaCache = new Map<string, { coverImage: string; previewUrl: string }>();
-
-/** In-memory cache of resolved 30s preview URLs keyed by Spotify track id. */
 const previewUrlCache = new Map<string, string>();
 
 function normalizeComparable(value: string): string {
@@ -615,9 +625,9 @@ async function findDeezerMedia(row: TopTrackMediaLookupRow): Promise<{ coverImag
 }
 
 async function coverMediaFromTopTracks(ids: string[]): Promise<TrackCardMedia[]> {
-  if (!supabaseAdmin || ids.length === 0) return [];
+  if (!supabaseRead || ids.length === 0) return [];
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await supabaseRead
     .from("top_tracks")
     .select("spotify_track_id, name, artist, album, release_year, duration_ms, cover_url")
     .in("spotify_track_id", ids);
