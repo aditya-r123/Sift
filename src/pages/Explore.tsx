@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { recordSwipeAndUpdateTaste } from '../recommendations.js';
-import { songs as fallbackSongs, type Song } from '../songs.js';
+import type { Song } from '../types.js';
 import {
   loadCardCoverMedia,
   loadExploreRecommendationSongs,
@@ -13,7 +13,7 @@ import { SwipeCard } from '../components/SwipeCard.js';
 const BATCH_SIZE = 15;
 
 export function ExplorePage() {
-  const [songs, setSongs] = useState<Song[]>(fallbackSongs);
+  const [songs, setSongs] = useState<Song[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [meId, setMeId] = useState<string | null>(null);
@@ -23,15 +23,15 @@ export function ExplorePage() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadFallbackCards() {
-      const generated = await loadGeneratedSongs();
-      return generated.length > 0 ? generated : fallbackSongs;
+    async function loadAvailableCards() {
+      return loadGeneratedSongs();
     }
 
     async function init(userId: string | null) {
       setLoading(true);
       try {
-        const cards = userId ? await loadExploreRecommendationSongs(userId, BATCH_SIZE) : await loadFallbackCards();
+        const recommended = userId ? await loadExploreRecommendationSongs(userId, BATCH_SIZE) : [];
+        const cards = recommended.length > 0 ? recommended : await loadAvailableCards();
         if (!cancelled) {
           setSongs(cards);
           setCurrentIndex(0);
@@ -39,7 +39,7 @@ export function ExplorePage() {
       } catch (error) {
         console.warn('Failed to load Explore recommendations:', error);
         try {
-          const cards = await loadFallbackCards();
+          const cards = await loadAvailableCards();
           if (!cancelled) {
             setSongs(cards);
             setCurrentIndex(0);
@@ -140,18 +140,20 @@ export function ExplorePage() {
   const visibleCards = songs.slice(currentIndex, currentIndex + 3);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-      <div className="w-full max-w-lg px-6 -mt-8">
-        <h1 className="text-3xl font-bold text-white mb-8">Explore</h1>
-        <div className="h-[520px] relative">
+    <div className="sift-feed-page">
+      <div className="sift-feed-panel">
+        <div className="sift-feed-heading">
+          <div>
+            <p>Fresh picks</p>
+            <h1>Explore</h1>
+          </div>
+          <span>{songs.length} real tracks</span>
+        </div>
+        <div className="sift-deck-frame">
           {loading ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <p className="text-gray-500 text-lg">Loading…</p>
-            </div>
+            <div className="sift-empty"><p>Loading…</p></div>
           ) : visibleCards.length === 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <p className="text-gray-500 text-lg">No more songs to explore!</p>
-            </div>
+            <div className="sift-empty"><p>No more songs to explore!</p></div>
           ) : (
             visibleCards.map((song, index) => (
               <SwipeCard

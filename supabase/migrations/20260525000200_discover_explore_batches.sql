@@ -1,65 +1,3 @@
-/*[GenAI Use] Prompt 1
-Create a new migration in supabase/migrations/ that adds two Postgres functions: get_discover_batch and get_explore_batch.
-
-== get_discover_batch(p_user_id uuid, p_limit int default 5) ==
-
-Returns a set of songs for Discover feed.
-
-1. Load taste_profiles for p_user_id. If no row exists, treat all five feature preferences as 0.5.
-2. Build a CTE of all top_tracks NOT swiped by this user.
-3. Compute weighted squared Euclidean distance per candidate:
-    d2 = 0.35*(u.energy - s.energy)^2 + 0.25*(u.danceability - s.danceability)^2 + 0.20*(u.valence - s.valence)^2 + 0.15*(u.acousticness - s.acousticness)^2 + 0.05*(u.speechiness - s.speechiness)^2
-4. Rank candidates by d2 ascending.
-5. Return (p_limit - 1) closest songs as "exploit" picks.
-6. Return 1 "wildcard" song sampled from ranks 50-500.
-If fewer than 500 candidates exist, fall back to: LEAST(50, total/4) .. LEAST(500, total)
-If fewer than ~10 candidates total, just return all of them by distance.
-7. Shuffle the final p_limit rows so the wildcard isn't always last.
-
-Return columns: track-identifying + feature columns from top_tracks, plus 'is_wildcard boolean' so the frontend can optionally show a badge.
-
-
-
-== get_explore_batch(p_user_id uuid, p_limit int default 5) ==
-
-Returns songs away from taste profile, inverting one randomly-chosen axis.
-
-1. Load taste_profiles with same 0.5 fallback.
-2. Pick a random axis from {energy, danceability, valence, acousticness, speechiness} ONCE at the start of the function.
-3. Construct a target vector where the chosen axis = (1 - user.axis) and all other axes = user.axis (unchanged).
-4. Compute the same weighted distance formula against this target vector.
-5. Anti-join against swipes.
-6. Return p_limit songs with smallest distance to the inverted target.
-7. Include an 'inverted_axis' text column in every returned row (same value across the batch) so the frontend can display the label.
-*/
-
-/*[GenAI Use] Prompt 2
-Aadd why-this-song labels and mix in songs friends YES-swiped.
-
-== get_discover_batch ==
-
-1. Replace is_wildcard with three labelling columns:
-   - match_type text — 'exploit', 'wildcard', or 'friend_like'.
-   - top_match_axis text — the feature with the smallest weighted per-axis squared delta (the dimension this song matches the user best on). Null for friend_like.
-   - recommended_by text — friend's display_name for friend_like, else null.
-2. Reserve one slot for a friend pick: the most recent YES swipe by any accepted friend (either side of public.friends with status = 'accepted') on a song in top_tracks the user hasn't swiped. 
-Exclude it from the exploit/wildcard pool.
-3. Slot accounting: 1 friend (if available) + 1 wildcard (when pool ≥ 10) + exploit filling the rest of p_limit.
-4. The function needs to read accepted friends' YES swipes to do the friend pick, but the swipes_select_own RLS policy only lets users see their own swipes. 
-Find a way around that for this one function, while making sure a logged-in caller can still only fetch their own batch — not someone else's. 
-Direct psql / service_role calls with no auth should still be allowed so we can test. Explain to me what you did.
-5. Lock the function down so anonymous REST callers can't reach it — only authenticated users should be able to call it.
-
-== get_explore_batch ==
-
-1. Add match_type text (always 'opposite') alongside the existing inverted_axis.
-2. Keep security invoker; apply the same revoke/grant.
-
-Drop both old (uuid, int) signatures before recreating since the return shape changes.
-*/
-
-
-/* [GenAI Use] LLM Response Start*/
 drop function if exists public.get_discover_batch(uuid, int);
 drop function if exists public.get_explore_batch(uuid, int);
 
@@ -332,4 +270,3 @@ revoke execute on function public.get_explore_batch(uuid, int) from public;
 revoke execute on function public.get_explore_batch(uuid, int) from anon;
 grant  execute on function public.get_explore_batch(uuid, int) to authenticated;
 
-/* [GenAI Use] LLM Response End*/

@@ -14,14 +14,6 @@ export function scoreSavedSwipe(direction: string | null | undefined): number {
   return 0;
 }
 
-/*
-[GenAI Use] Prompt
-Add a TasteFeatures type and a setInitialTasteProfile helper that calls the
-set_initial_taste_profile RPC to overwrite the user's taste profile with the
-five seed features. Used to reset the profile after connecting Spotify.
-*/
-
-/* [GenAI Use] LLM Response Start*/
 export type TasteFeatures = {
   energy: number;
   danceability: number;
@@ -40,7 +32,6 @@ export async function setInitialTasteProfile(features: TasteFeatures) {
     p_speechiness: features.speechiness,
   });
 }
-/* [GenAI Use] LLM Response End*/
 
 export async function recordSwipeAndUpdateTaste(
   songId: string,

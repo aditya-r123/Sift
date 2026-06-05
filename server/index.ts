@@ -106,6 +106,13 @@ function hasSpotifySession(session: SessionShape | null | undefined): boolean {
   return typeof session?.access_token === "string" && session.access_token.length > 0;
 }
 
+function clearSpotifySession(session: SessionShape | null | undefined): void {
+  if (!session) return;
+  delete session.access_token;
+  delete session.refresh_token;
+  delete session.token_expiry;
+}
+
 async function fetchSpotify(path: string, session: SessionShape | null | undefined) {
   return requestSpotify(path, session);
 }
@@ -269,14 +276,6 @@ async function fetchExtendedAudioFeatures(trackId: string): Promise<{ body: unkn
   throw lastErr || new Error("RapidAPI request failed");
 }
 
-/*
-[GenAI Use] Prompt
-Add the five taste-profile feature keys and a helper that safely reads one
-[0,1] numeric feature out of a RapidAPI audio-features body, handling cases
-where the body is an array or wraps the features under data/audio_features.
-*/
-
-/* [GenAI Use] LLM Response Start*/
 // The five audio features that make up a taste profile (see taste_profiles table).
 const TASTE_FEATURE_KEYS = ["energy", "danceability", "valence", "acousticness", "speechiness"] as const;
 type TasteFeatureKey = (typeof TASTE_FEATURE_KEYS)[number];
@@ -296,7 +295,6 @@ function readFeature(body: unknown, key: TasteFeatureKey): number | null {
   }
   return null;
 }
-/* [GenAI Use] LLM Response End*/
 
 const SCOPES = [
   "user-read-email",
@@ -606,15 +604,6 @@ app.post("/api/liked-songs-playlist/:playlistId/tracks", guard, async (req, res)
   }
 });
 
-/*
-[GenAI Use] Prompt
-Add a guarded GET /api/taste-seed endpoint that builds an initial taste profile.
-Fetch the user's top 10 Spotify tracks, get each track's RapidAPI audio features,
-and average the five taste features. Skip tracks that error or lack features, and
-return the averages plus a sampleSize count (the client saves them via the RPC).
-*/
-
-/* [GenAI Use] LLM Response Start*/
 app.get("/api/taste-seed", guard, async (req, res) => {
   try {
     const top = (await fetchSpotify("me/top/tracks?limit=10&time_range=medium_term", req.session)) as {
@@ -662,7 +651,6 @@ app.get("/api/taste-seed", guard, async (req, res) => {
     res.status(status).json({ error: err.message || String(e) });
   }
 });
-/* [GenAI Use] LLM Response End*/
 
 app.get("/api/auth-status", async (req, res) => {
   let spotifyConnected = hasSpotifySession(req.session);
@@ -673,7 +661,8 @@ app.get("/api/auth-status", async (req, res) => {
     }
   } catch (error) {
     console.error(error);
-    spotifyConnected = hasSpotifySession(req.session);
+    clearSpotifySession(req.session);
+    spotifyConnected = false;
   }
   res.json({ spotifyConnected });
 });

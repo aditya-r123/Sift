@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js';
-import type { Song } from './songs.js';
+import type { Song } from './types.js';
 
 export type CardMedia = {
   title?: string;
@@ -59,6 +59,14 @@ function songColor(seed: string): string {
   return palette[hash % palette.length];
 }
 
+function formatArtistName(artist: string): string {
+  return artist
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
 function tagsForTrack(track: TopTrackRow): string[] {
   const tags: string[] = [];
   if (track.rank <= 50) tags.push('Popular');
@@ -74,10 +82,17 @@ function trackToSong(track: TopTrackRow, media: CardMedia = {}, extraTags: strin
   return {
     id: track.spotify_track_id,
     title: media.title || track.name,
-    artist: media.artist || track.artist,
+    artist: formatArtistName(media.artist || track.artist),
     album: media.album || track.album,
     releaseYear: media.releaseYear ?? track.release_year,
     durationMs: media.durationMs ?? track.duration_ms,
+    features: {
+      energy: track.energy,
+      danceability: track.danceability,
+      valence: track.valence,
+      acousticness: track.acousticness,
+      speechiness: track.speechiness,
+    },
     tags: uniqueTags([...extraTags, ...tagsForTrack(track)]),
     color: songColor(track.spotify_track_id),
     coverImage: media.coverImage || track.cover_url || undefined,
@@ -129,10 +144,11 @@ export function mergeSongMedia(song: Song, media: CardMedia | undefined): Song {
   return {
     ...song,
     title: media.title || song.title,
-    artist: media.artist || song.artist,
+    artist: formatArtistName(media.artist || song.artist),
     album: media.album || song.album,
     releaseYear: media.releaseYear ?? song.releaseYear,
     durationMs: media.durationMs ?? song.durationMs,
+    features: song.features,
     coverImage: media.coverImage || song.coverImage,
     previewUrl: media.previewUrl || song.previewUrl,
   };
@@ -203,6 +219,21 @@ async function loadTopTracksByIds(trackIds: string[]): Promise<Map<string, TopTr
   }
 
   return tracksById;
+}
+
+export async function loadSongsByIds(trackIds: string[]): Promise<Song[]> {
+  const uniqueIds = [...new Set(trackIds)];
+  if (uniqueIds.length === 0) return [];
+
+  const [tracksById, mediaById] = await Promise.all([
+    loadTopTracksByIds(uniqueIds),
+    loadCardCoverMedia(uniqueIds),
+  ]);
+
+  return uniqueIds.flatMap((trackId) => {
+    const track = tracksById.get(trackId);
+    return track ? [trackToSong(track, mediaById.get(trackId))] : [];
+  });
 }
 
 async function recommendationRowsToSongs(rows: RecommendationRow[]): Promise<Song[]> {

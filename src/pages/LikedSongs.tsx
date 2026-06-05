@@ -3,8 +3,8 @@ import { ExternalLink, Heart, ListPlus, RefreshCw, SlidersHorizontal } from 'luc
 import { LikedSongMiniCard, type LikedSong } from '../components/LikedSongMiniCard.js';
 import { LikedSongsControls, type LikedSongsSortMode } from '../components/LikedSongsControls.js';
 import { supabase } from '../supabase.js';
-import { songs as fallbackSongs, type Song } from '../songs.js';
-import { loadCardCoverMedia, loadGeneratedSongs, type CardMedia } from '../trackCards.js';
+import type { Song } from '../types.js';
+import { loadCardCoverMedia, loadSongsByIds, type CardMedia } from '../trackCards.js';
 
 type SwipeRow = {
   song_id: string;
@@ -79,21 +79,18 @@ export function LikedSongsPage() {
       }
 
       try {
-        const [generated, swipes] = await Promise.all([
-          loadGeneratedSongs().catch(() => []),
-          supabase
-            .from('swipes')
-            .select('song_id, swiped_at, source')
-            .eq('user_id', userId)
-            .eq('direction', 'YES')
-            .order('swiped_at', { ascending: false }),
-        ]);
+        const swipes = await supabase
+          .from('swipes')
+          .select('song_id, swiped_at, source')
+          .eq('user_id', userId)
+          .eq('direction', 'YES')
+          .order('swiped_at', { ascending: false });
 
         if (swipes.error) throw swipes.error;
 
-        const catalog = generated.length > 0 ? generated : fallbackSongs;
-        const songById = new Map(catalog.map((song) => [song.id, song]));
         const rows = (swipes.data ?? []) as SwipeRow[];
+        const catalog = await loadSongsByIds(rows.map((row) => row.song_id));
+        const songById = new Map(catalog.map((song) => [song.id, song]));
         const next = rows.flatMap((row) => {
           const song = songById.get(row.song_id);
           return song ? [toLikedSong(song, row)] : [];

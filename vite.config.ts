@@ -16,7 +16,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.join(repoRoot, "src/index.html"),
-        design: path.join(repoRoot, "src/design.html"),
       },
     },
   },

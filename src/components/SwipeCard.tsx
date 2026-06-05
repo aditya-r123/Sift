@@ -1,8 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, useMotionValue, useTransform, PanInfo } from 'motion/react';
 import { Heart, X, Play, Pause } from 'lucide-react';
-import { type Song } from '../songs.js';
+import { type Song } from '../types.js';
 import { formatDuration, loadTrackPreview } from '../trackCards.js';
+
+const FEATURE_ROWS = [
+  { key: 'energy', label: 'Energy', color: 'var(--c-energy)' },
+  { key: 'danceability', label: 'Dance', color: 'var(--c-dance)' },
+  { key: 'valence', label: 'Mood', color: 'var(--c-valence)' },
+  { key: 'acousticness', label: 'Acoustic', color: 'var(--c-acoustic)' },
+] as const;
 
 /** Color-code a tag by its category so genres, audio features, moods and recommendation sources read at a glance. */
 function tagStyle(tag: string): string {
@@ -14,28 +21,33 @@ function tagStyle(tag: string): string {
     t.startsWith('opposite') ||
     ['discover', 'wildcard', 'taste match', 'explore'].includes(t)
   ) {
-    return 'bg-blue-500/15 text-blue-300';
+    return 'tag-source';
   }
   // Genre tags.
   if (
     ['hip-hop', 'rap', 'r&b', 'pop', 'rock', 'indie', 'jazz', 'soul', 'electronic', 'edm', 'country', 'metal', 'classical', 'reggae', 'latin'].includes(t)
   ) {
-    return 'bg-purple-500/15 text-purple-300';
+    return 'tag-genre';
   }
   // Audio-feature tags.
   if (['energy', 'danceability', 'bpm', 'produced', 'vocal', 'acoustic', 'tempo', 'instrumental'].includes(t)) {
-    return 'bg-teal-500/15 text-teal-300';
+    return 'tag-feature';
   }
   // Mood / listening-habit tags.
   if (['chill', 'on repeat', 'upbeat', 'popular', 'happy', 'sad', 'mellow'].includes(t)) {
-    return 'bg-amber-500/15 text-amber-300';
+    return 'tag-mood';
   }
-  return 'bg-[#2a2a2a] text-gray-400';
+  return 'tag-default';
+}
+
+function featurePercent(value: number | null | undefined): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return Math.round(Math.max(0, Math.min(1, value)) * 100);
 }
 
 /**
  * Shared card used by both the Discover and Explore feeds so the two pages stay identical:
- * draggable swipe, single-line scrollable title/metadata, audio preview controls, and pass/like buttons.
+ * draggable swipe, KEEP/SKIP stamps, feature bars, audio preview controls, and pass/like buttons.
  */
 export function SwipeCard({
   song,
@@ -51,6 +63,10 @@ export function SwipeCard({
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-200, 200], [-25, 25]);
   const opacity = useTransform(x, [-200, -100, 0, 100, 200], [0, 1, 1, 1, 0]);
+  const keepOpacity = useTransform(x, [30, 115], [0, 1]);
+  const skipOpacity = useTransform(x, [-115, -30], [1, 0]);
+  const keepScale = useTransform(x, [30, 115], [0.86, 1]);
+  const skipScale = useTransform(x, [-115, -30], [1, 0.86]);
 
   const handleDragEnd = (_event: PointerEvent, info: PanInfo) => {
     if (Math.abs(info.offset.x) > 100) {
@@ -59,6 +75,10 @@ export function SwipeCard({
   };
 
   const meta = [song.album, song.releaseYear, formatDuration(song.durationMs)].filter(Boolean).join(' · ');
+  const features = FEATURE_ROWS.map((feature) => ({
+    ...feature,
+    value: featurePercent(song.features?.[feature.key]),
+  })).filter((feature) => feature.value !== null);
 
   return (
     <motion.div
@@ -76,16 +96,23 @@ export function SwipeCard({
         scale: 1 - index * 0.05,
         y: index * 10,
       }}
-      className="absolute inset-0 cursor-grab active:cursor-grabbing"
+      className="sift-swipe-shell absolute inset-0 cursor-grab active:cursor-grabbing"
     >
-      <div className="w-full h-full bg-[#1a1a1a] rounded-3xl p-6 flex flex-col items-center overflow-hidden shadow-2xl">
-        <div className="card-scroll-x w-full h-8 shrink-0">
+      <div className="sift-swipe-card">
+        <motion.div className="swipe-stamp keep" style={{ opacity: keepOpacity, scale: keepScale }}>
+          KEEP
+        </motion.div>
+        <motion.div className="swipe-stamp skip" style={{ opacity: skipOpacity, scale: skipScale }}>
+          SKIP
+        </motion.div>
+
+        <div className="sift-tag-strip">
           {song.tags.length > 0 && (
-            <div className="flex gap-1.5 w-max items-center h-6">
+            <div className="flex gap-1.5 w-max items-center">
               {song.tags.map((tag, idx) => (
                 <span
                   key={idx}
-                  className={`text-[10px] leading-none px-2 py-1 rounded-full whitespace-nowrap ${tagStyle(tag)}`}
+                  className={`sift-tag ${tagStyle(tag)}`}
                 >
                   {tag}
                 </span>
@@ -94,52 +121,64 @@ export function SwipeCard({
           )}
         </div>
 
-        <div className="flex-1 flex items-center justify-center min-h-0 py-3">
+        <div className="sift-cover-stage">
           {song.coverImage ? (
             <img
               src={song.coverImage}
               alt={`${song.title} cover`}
-              className="w-48 h-48 rounded-2xl shadow-lg object-cover"
+              className="sift-cover-image"
             />
           ) : (
             <div
-              className="w-48 h-48 rounded-2xl flex items-center justify-center shadow-lg"
+              className="sift-cover-fallback"
               style={{ backgroundColor: song.color }}
             >
-              <div className="w-24 h-24 bg-white/20 rounded-2xl" />
+              <div className="sift-cover-fallback-mark" />
             </div>
           )}
         </div>
 
-        <div className="w-full shrink-0">
-          <div className="card-scroll-x text-center mb-1">
-            <h3 className="text-white font-bold text-2xl inline-block">{song.title}</h3>
-          </div>
-          <p className="text-gray-400 text-base text-center truncate">{song.artist}</p>
-          <div className="card-scroll-x text-center mt-1 h-5">
-            {meta.length > 0 && <p className="text-sm text-gray-500 inline-block">{meta}</p>}
-          </div>
+        <div className="sift-card-copy">
+          <h3>{song.title}</h3>
+          <p className="sift-artist">{song.artist}</p>
+          {meta.length > 0 && <p className="sift-meta">{meta}</p>}
         </div>
+
+        {features.length > 0 && (
+          <div className="sift-feature-grid" aria-label="Audio profile">
+            {features.map((feature) => (
+              <div key={feature.key} className="sift-feature">
+                <div className="sift-feature-label">
+                  <span>{feature.label}</span>
+                  <span>{feature.value}</span>
+                </div>
+                <div className="sift-feature-bar">
+                  <span style={{ width: `${feature.value ?? 0}%`, background: feature.color }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {isTop && <AudioPreview song={song} />}
 
         {isTop && (
-          <div className="flex justify-center gap-6 mt-3 shrink-0">
+          <div className="sift-card-actions">
             <button
               type="button"
               onClick={() => onSwipe('left')}
-              className="w-12 h-12 rounded-full bg-[#2a2a2a] hover:bg-[#333] flex items-center justify-center transition-colors"
+              className="sift-action no"
               aria-label="Pass"
             >
-              <X className="w-6 h-6 text-gray-300" />
+              <X className="w-6 h-6" />
             </button>
             <button
               type="button"
               onClick={() => onSwipe('right')}
-              className="w-12 h-12 rounded-full bg-[#2a2a2a] hover:bg-[#333] flex items-center justify-center transition-colors"
+              className="sift-action yes"
               aria-label="Like"
             >
-              <Heart className="w-6 h-6 text-green-400" />
+              <Heart className="w-6 h-6" />
             </button>
           </div>
         )}
@@ -153,9 +192,16 @@ function AudioPreview({ song }: { song: Song }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | undefined>(song.previewUrl);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const bars = useMemo(
+    () => Array.from({ length: 42 }, (_, i) => 0.28 + 0.72 * Math.abs(Math.sin(i * 0.58) * 0.55 + Math.cos(i * 0.23) * 0.45)),
+    []
+  );
 
   useEffect(() => {
     setPreviewUrl(song.previewUrl);
+    setProgress(0);
+    setIsPlaying(false);
   }, [song.id, song.previewUrl]);
 
   useEffect(() => {
@@ -186,26 +232,40 @@ function AudioPreview({ song }: { song: Song }) {
       setIsPlaying(false);
     }
   };
+  const activeBars = Math.max(0, Math.min(bars.length, Math.round(progress * bars.length)));
 
   return (
     <div
-      className="flex items-center justify-center mt-3 shrink-0"
+      className="sift-preview"
       // Keep the button press from starting a card drag.
       onPointerDown={(event) => event.stopPropagation()}
+      data-no-drag
     >
       <button
         type="button"
         onClick={togglePlay}
         disabled={!previewUrl}
         aria-label={isPlaying ? 'Pause preview' : 'Play preview'}
-        className="w-11 h-11 rounded-full bg-[#2a2a2a] hover:bg-[#333] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+        className="sift-preview-button"
       >
         {isPlaying ? (
-          <Pause className="w-5 h-5 text-blue-400" />
+          <Pause className="w-5 h-5" />
         ) : (
-          <Play className="w-5 h-5 text-blue-400 translate-x-px" />
+          <Play className="w-5 h-5 translate-x-px" />
         )}
       </button>
+      <div className={`sift-wave ${isPlaying ? 'is-playing' : ''}`} aria-hidden="true">
+        {bars.map((height, index) => (
+          <span
+            key={index}
+            style={{
+              height: `${Math.max(0.18, Math.min(1, height)) * 100}%`,
+              opacity: index <= activeBars ? 1 : 0.28,
+              animationDelay: `${(index % 7) * 0.07}s`,
+            }}
+          />
+        ))}
+      </div>
       <audio
         ref={audioRef}
         src={previewUrl}
@@ -213,6 +273,11 @@ function AudioPreview({ song }: { song: Song }) {
         onEnded={() => setIsPlaying(false)}
         onPause={() => setIsPlaying(false)}
         onPlay={() => setIsPlaying(true)}
+        onTimeUpdate={(event) => {
+          const audio = event.currentTarget;
+          const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 30;
+          setProgress(Math.max(0, Math.min(1, audio.currentTime / duration)));
+        }}
       />
     </div>
   );

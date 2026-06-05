@@ -1,14 +1,3 @@
-/*
-[GenAI Use] Prompt
-Add a new migration with an RPC that sets a user's taste profile from their
-Spotify top-track averages, run after they connect Spotify.
-1. Add set_initial_taste_profile with the five feature values as inputs.
-2. Use auth.uid(), reject unauthenticated users, and require each value in [0,1].
-3. Connecting resets the profile: overwrite all five features and set swipe_count to 0.
-4. Grant execute to authenticated only, matching the existing migrations' style.
-*/
-
-/* [GenAI Use] LLM Response Start*/
 create or replace function public.set_initial_taste_profile(
   p_energy        double precision,
   p_danceability  double precision,
@@ -77,4 +66,3 @@ revoke execute on function public.set_initial_taste_profile(
 grant execute on function public.set_initial_taste_profile(
   double precision, double precision, double precision, double precision, double precision
 ) to authenticated;
-/* [GenAI Use] LLM Response End*/

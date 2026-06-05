@@ -1,12 +1,3 @@
-/* [GenAI Use] Prompt:
-In supabase/migrations/ Create a new migration that:
-1. Adds a 'songs' table: id (uuid), spotify_track_id (text unique), title, artist, artwork_url, plus energy, danceability, valence, acousticness, speechiness as numeric(4,3) constrained to [0,1].
-2. Edits 'swipes': add source column (text, CHECK in ('DISCOVER','EXPLORE')), migrate existing directions 'right'->'YES' and 'left'->'NO', then add a CHECK constraint enforcing YES/NO.
-3. RLS: users read/write their own swipes and taste_profile; songs table is readable by all authenticated users.
-*/
-
-/* [GenAI Use] LLM Response Start*/
-
 create table if not exists public.songs (
   id                uuid primary key default gen_random_uuid(),
   spotify_track_id  text not null unique,
@@ -43,4 +34,3 @@ update public.swipes set direction = 'NO'  where direction = 'left';
 alter table public.swipes
   add constraint swipes_direction_check check (direction in ('YES', 'NO'));
 
-/* [GenAI Use] LLM Response End*/

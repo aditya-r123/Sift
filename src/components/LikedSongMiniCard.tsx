@@ -1,5 +1,5 @@
 import { CalendarDays, Heart } from 'lucide-react';
-import { type Song } from '../songs.js';
+import { type Song } from '../types.js';
 
 export type LikedSong = Song & {
   swipedAt: string | null;

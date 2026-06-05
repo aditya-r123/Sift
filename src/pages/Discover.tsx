@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { recordSwipeAndUpdateTaste, scoreSavedSwipe } from '../recommendations.js';
 import { supabase } from '../supabase.js';
-import { songs, type Song } from '../songs.js';
+import type { Song } from '../types.js';
 import {
   loadCardCoverMedia,
   loadDiscoverRecommendationSongs,
@@ -30,7 +30,7 @@ function pickNextBatch(
 
 export function DiscoverPage() {
   const [meId, setMeId] = useState<string | null>(null);
-  const [sourceSongs, setSourceSongs] = useState<Song[]>(songs);
+  const [sourceSongs, setSourceSongs] = useState<Song[]>([]);
   const [currentBatch, setCurrentBatch] = useState<Song[]>([]);
   const [batchSwipes, setBatchSwipes] = useState<Record<string, 'left' | 'right'>>({});
   const [tagScores, setTagScores] = useState<Record<string, number>>({});
@@ -56,12 +56,11 @@ export function DiscoverPage() {
     let cancelled = false;
 
     async function init(userId: string | null) {
-      let cards = songs;
+      let cards: Song[] = [];
       try {
-        const generated = await loadGeneratedSongs();
-        if (generated.length > 0) cards = generated;
+        cards = await loadGeneratedSongs();
       } catch (error) {
-        console.warn('Failed to load generated cards:', error);
+        console.warn('Failed to load Discover cards:', error);
       }
 
       if (!userId) {
@@ -77,8 +76,12 @@ export function DiscoverPage() {
           setSourceSongs(cards);
           setSeenIds(new Set());
           setTagScores({});
-          setCurrentBatch(batch);
-          setBatchSwipes({});
+          if (batch.length > 0) {
+            setCurrentBatch(batch);
+            setBatchSwipes({});
+          } else {
+            startBatch(cards, new Set(), {});
+          }
         }
       } catch (error) {
         console.warn('Failed to load Discover recommendations:', error);
@@ -246,8 +249,8 @@ export function DiscoverPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-        <p className="text-gray-500">Loading…</p>
+      <div className="sift-feed-page">
+        <p className="sift-empty">Loading…</p>
       </div>
     );
   }
@@ -255,11 +258,23 @@ export function DiscoverPage() {
   const visibleCards = currentBatch.slice(topIndex, topIndex + 3);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-      <div className="w-full max-w-lg px-6 -mt-8">
-        <h1 className="text-3xl font-bold text-white mb-8">Discover</h1>
-        <div className="h-[520px] relative">
-          {visibleCards.length === 0 ? null : (
+    <div className="sift-feed-page">
+      <div className="sift-feed-panel">
+        <div className="sift-feed-heading">
+          <div>
+            <p>For you</p>
+            <h1>Discover</h1>
+          </div>
+          <span>{sourceSongs.length} real tracks</span>
+        </div>
+        <div className="sift-deck-frame">
+          {visibleCards.length === 0 ? (
+            <div className="sift-empty">
+              <p>
+                No Discover songs are available yet. Connect Spotify or seed Supabase top tracks to build this feed.
+              </p>
+            </div>
+          ) : (
             visibleCards.map((song, index) => (
               <SwipeCard
                 key={song.id}

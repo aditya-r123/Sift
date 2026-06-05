@@ -60,6 +60,13 @@ async function postJson<T>(url: string, body: Record<string, unknown>): Promise<
   return data;
 }
 
+function replaceUrlWithoutHash() {
+  const url = new URL(window.location.href);
+  url.hash = "";
+  if (url.pathname.startsWith("//")) url.pathname = "/";
+  history.replaceState(null, "", url.toString());
+}
+
 
 function AuthShell({
   error,
@@ -249,9 +256,9 @@ function App() {
     const hash = (location.hash || "").replace(/^#/, "");
     if (hash.startsWith("error=")) {
       setError(decodeURIComponent(hash.slice("error=".length)));
-      history.replaceState(null, "", location.pathname + location.search);
-    } else if (hash === "connected") {
-      history.replaceState(null, "", location.pathname + location.search);
+      replaceUrlWithoutHash();
+    } else if (hash === "connected" || hash === "/connected") {
+      replaceUrlWithoutHash();
     }
 
     fetchJson<AuthStatus>("/api/auth-status")

@@ -5,7 +5,9 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase.js';
 import { setInitialTasteProfile, type TasteFeatures } from './recommendations.js';
 
-inject();
+if (!["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)) {
+  inject();
+}
 
 const apiBase = "";
 
@@ -44,6 +46,13 @@ function showError(msg: string | null | undefined) {
   }
   el.hidden = false;
   el.textContent = msg;
+}
+
+function replaceUrlWithoutHash() {
+  const url = new URL(window.location.href);
+  url.hash = "";
+  if (url.pathname.startsWith("//")) url.pathname = "/";
+  history.replaceState(null, "", url.toString());
 }
 
 function showLoginPage() {
@@ -124,9 +133,18 @@ async function fetchJson(url: string): Promise<Record<string, unknown>> {
   const res = await fetch(`${apiBase}${url}`, { credentials: "include" });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    throw new Error(typeof data.error === "string" ? data.error : res.statusText);
+    const error = new Error(typeof data.error === "string" ? data.error : res.statusText) as Error & {
+      status?: number;
+    };
+    error.status = res.status;
+    throw error;
   }
   return data;
+}
+
+function isAuthStatusError(error: unknown): boolean {
+  const status = typeof error === "object" && error !== null && "status" in error ? Number((error as { status?: number }).status) : 0;
+  return status === 401 || status === 403;
 }
 
 function escapeHtml(s: string) {
@@ -424,7 +442,7 @@ function applyGuestUi() {
   showLoginPage();
 
   if (location.hash) {
-    history.replaceState(null, "", location.pathname + location.search);
+    replaceUrlWithoutHash();
   }
 
   const profile = qs("#profile");
@@ -536,15 +554,6 @@ function accountUserFromSession(session: Session): AccountUser {
   return { displayName, email: session.user.email || "" };
 }
 
-/*
-[GenAI Use] Prompt
-After a successful Spotify connect, seed the user's taste profile once. Add a
-one-shot flag and a seedTasteProfileFromSpotify function that fetches the
-averaged features from /api/taste-seed and saves them via setInitialTasteProfile.
-Skip if no usable features, and don't let failures block loading Spotify content.
-*/
-
-/* [GenAI Use] LLM Response Start*/
 // Set when the user has just returned from a successful Spotify OAuth connect,
 // so we seed the taste profile exactly once (not on every authenticated load).
 let pendingSpotifySeed = false;
@@ -574,7 +583,6 @@ async function seedTasteProfileFromSpotify() {
     showError(e instanceof Error ? e.message : String(e));
   }
 }
-/* [GenAI Use] LLM Response End*/
 
 async function loadSpotifyState() {
   try {
@@ -589,7 +597,11 @@ async function loadSpotifyState() {
       return;
     }
   } catch (e) {
-    showError(e instanceof Error ? e.message : String(e));
+    if (!isAuthStatusError(e)) {
+      showError(e instanceof Error ? e.message : String(e));
+    } else {
+      showError(null);
+    }
   }
   showSpotifyGate();
   qs("#tab-discover-btn")?.click();
@@ -698,11 +710,11 @@ async function bootstrap() {
   const hash = (location.hash || "").replace(/^#/, "");
   if (hash.startsWith("error=")) {
     showError(decodeURIComponent(hash.slice("error=".length)));
-    history.replaceState(null, "", location.pathname + location.search);
+    replaceUrlWithoutHash();
   } else if (hash === "connected" || hash === "/connected") {
     // Returned from a successful Spotify connect — seed the taste profile once.
     pendingSpotifySeed = true;
-    history.replaceState(null, "", location.pathname + location.search);
+    replaceUrlWithoutHash();
   }
 
 

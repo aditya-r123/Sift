@@ -3,7 +3,7 @@
 ## Project layout
 
 ```text
-src/              Browser UI (Vite + React), pages, and design prototype.
+src/              Browser UI (Vite + React) and app pages.
 server/index.ts   Express API (Spotify OAuth, sessions, static UI).
 supabase/         Database migrations and local Supabase config.
 scripts/          One-off maintenance scripts (e.g. seed-top-tracks).
@@ -51,8 +51,6 @@ npm run dev
 
 - Frontend: **http://127.0.0.1:5173** (Vite proxies `/api` and `/auth` to the API server.)
 - API: **http://127.0.0.1:3001** (or your **`PORT`**)
-- Design prototype: **http://127.0.0.1:5173/design.html**
-
 Set **`PUBLIC_APP_ORIGIN=http://127.0.0.1:5173`** in `.env` so redirects and cookie/session helpers target the URL you actually open in the browser.  
 **Important:** **`SPOTIFY_REDIRECT_URI`** must still point at the API (e.g. `http://127.0.0.1:3001/auth/callback`), not port 5173, because Spotify sends the authorization code to Express.
 
