@@ -8,6 +8,7 @@ export type CardMedia = {
   releaseYear?: number | null;
   durationMs?: number | null;
   coverImage?: string;
+  previewUrl?: string;
 };
 
 type TopTrackRow = {
@@ -133,7 +134,20 @@ export function mergeSongMedia(song: Song, media: CardMedia | undefined): Song {
     releaseYear: media.releaseYear ?? song.releaseYear,
     durationMs: media.durationMs ?? song.durationMs,
     coverImage: media.coverImage || song.coverImage,
+    previewUrl: media.previewUrl || song.previewUrl,
   };
+}
+
+export async function loadTrackPreview(trackId: string): Promise<string | undefined> {
+  try {
+    const res = await fetch(`/api/tracks?ids=${encodeURIComponent(trackId)}`);
+    if (!res.ok) return undefined;
+    const data = (await res.json()) as { tracks?: Array<CardMedia & { id?: string }> };
+    return data.tracks?.find((track) => track.id === trackId)?.previewUrl || undefined;
+  } catch (error) {
+    console.warn('Failed to load track preview:', error);
+    return undefined;
+  }
 }
 
 export async function loadCardCoverMedia(trackIds: string[]): Promise<Map<string, CardMedia>> {

@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { motion, useMotionValue, useTransform, PanInfo } from 'motion/react';
-import { Heart, X } from 'lucide-react';
 import { recordSwipeAndUpdateTaste, scoreSavedSwipe } from '../recommendations.js';
 import { supabase } from '../supabase.js';
 import { songs, type Song } from '../songs.js';
 import {
-  formatDuration,
   loadCardCoverMedia,
   loadDiscoverRecommendationSongs,
   loadGeneratedSongs,
   mergeSongMedia,
 } from '../trackCards.js';
+import { SwipeCard } from '../components/SwipeCard.js';
 
-const BATCH_SIZE = 5;
+const BATCH_SIZE = 15;
 
 function pickNextBatch(
   sourceSongs: Song[],
@@ -113,7 +111,7 @@ export function DiscoverPage() {
             startBatch(cards, seen, scores);
           }
         } catch {
-          // swipe history unavailable — just start fresh
+          // swipe history unavailable, just start fresh
           if (!cancelled) {
             setSourceSongs(cards);
             startBatch(cards, new Set(), {});
@@ -233,6 +231,19 @@ export function DiscoverPage() {
     [recordSwipe]
   );
 
+  // Arrow keys mirror swiping/clicking: Left = pass, Right = like.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      const top = currentBatch[topIndex];
+      if (!top) return;
+      event.preventDefault();
+      handleSwipe(top, event.key === 'ArrowRight' ? 'right' : 'left');
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [currentBatch, topIndex, handleSwipe]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
@@ -248,11 +259,7 @@ export function DiscoverPage() {
       <div className="w-full max-w-lg px-6 -mt-8">
         <h1 className="text-3xl font-bold text-white mb-8">Discover</h1>
         <div className="h-[520px] relative">
-          {visibleCards.length === 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <p className="text-gray-500 text-lg">You've heard it all!</p>
-            </div>
-          ) : (
+          {visibleCards.length === 0 ? null : (
             visibleCards.map((song, index) => (
               <SwipeCard
                 key={song.id}
@@ -266,112 +273,5 @@ export function DiscoverPage() {
         </div>
       </div>
     </div>
-  );
-}
-
-function SwipeCard({
-  song,
-  index,
-  isTop,
-  onSwipe,
-}: {
-  song: Song;
-  index: number;
-  isTop: boolean;
-  onSwipe: (direction: 'left' | 'right') => void;
-}) {
-  const x = useMotionValue(0);
-  const rotate = useTransform(x, [-200, 200], [-25, 25]);
-  const opacity = useTransform(x, [-200, -100, 0, 100, 200], [0, 1, 1, 1, 0]);
-
-  const handleDragEnd = (_event: PointerEvent, info: PanInfo) => {
-    if (Math.abs(info.offset.x) > 100) {
-      onSwipe(info.offset.x > 0 ? 'right' : 'left');
-    }
-  };
-
-  return (
-    <motion.div
-      drag={isTop ? 'x' : false}
-      dragConstraints={{ left: 0, right: 0 }}
-      style={{
-        x: isTop ? x : 0,
-        rotate: isTop ? rotate : 0,
-        opacity: isTop ? opacity : 1,
-        zIndex: 10 - index,
-        scale: 1 - index * 0.05,
-      }}
-      onDragEnd={handleDragEnd}
-      animate={{
-        scale: 1 - index * 0.05,
-        y: index * 10,
-      }}
-      className="absolute inset-0 cursor-grab active:cursor-grabbing"
-    >
-      <div className="w-full h-full bg-[#1a1a1a] rounded-3xl p-8 flex flex-col shadow-2xl">
-        <div>
-          {song.tags.length > 0 && (
-            <div className="flex gap-2 mb-4 flex-wrap">
-              {song.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="text-xs text-gray-400 px-3 py-1.5 bg-[#2a2a2a] rounded-full"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="flex-1 flex items-center justify-center">
-          {song.coverImage ? (
-            <img
-              src={song.coverImage}
-              alt={`${song.title} cover`}
-              className="w-64 h-64 rounded-3xl shadow-lg object-cover"
-            />
-          ) : (
-            <div
-              className="w-64 h-64 rounded-3xl flex items-center justify-center shadow-lg"
-              style={{ backgroundColor: song.color }}
-            >
-              <div className="w-32 h-32 bg-white/20 rounded-2xl" />
-            </div>
-          )}
-        </div>
-
-        <div className="text-center">
-          <h3 className="text-white font-bold text-3xl mb-2">{song.title}</h3>
-          <p className="text-gray-400 text-lg">{song.artist}</p>
-          {[song.album, song.releaseYear, formatDuration(song.durationMs)].filter(Boolean).length > 0 && (
-            <p className="mt-1 text-sm text-gray-500">
-              {[song.album, song.releaseYear, formatDuration(song.durationMs)].filter(Boolean).join(' · ')}
-            </p>
-          )}
-        </div>
-
-        {isTop && (
-          <div className="flex justify-center gap-6 mt-6">
-            <button
-              type="button"
-              onClick={() => onSwipe('left')}
-              className="w-14 h-14 rounded-full bg-[#2a2a2a] hover:bg-[#333] flex items-center justify-center transition-colors"
-              aria-label="Pass"
-            >
-              <X className="w-6 h-6 text-gray-300" />
-            </button>
-            <button
-              type="button"
-              onClick={() => onSwipe('right')}
-              className="w-14 h-14 rounded-full bg-[#2a2a2a] hover:bg-[#333] flex items-center justify-center transition-colors"
-              aria-label="Like"
-            >
-              <Heart className="w-6 h-6 text-teal-400" />
-            </button>
-          </div>
-        )}
-      </div>
-    </motion.div>
   );
 }
