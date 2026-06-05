@@ -73,11 +73,6 @@ const supabaseAdmin: SupabaseClient | null =
         auth: { persistSession: false, autoRefreshToken: false },
       })
     : null;
-
-// Read-only catalog client: prefer the service role, but fall back to the public anon key
-// (top_tracks has a public-read policy) so cover/preview lookups still work when only the
-// anon key is configured on the deployment — otherwise /api/tracks returns nothing and
-// audio previews show up disabled in production.
 const supabaseRead: SupabaseClient | null =
   supabaseAdmin ??
   (SUPABASE_URL && SUPABASE_ANON_KEY
