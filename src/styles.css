@@ -1077,7 +1077,8 @@
   .insights-modal {
     border-radius: var(--radius);
     padding: 0;
-    max-width: min(520px, 92vw);
+    width: min(640px, 94vw);
+    max-width: min(640px, 94vw);
     background: var(--surface);
     color: var(--text);
     border: 1px solid var(--border);
@@ -1085,7 +1086,7 @@
   }
 
   .insights-form {
-    padding: 1rem 1.1rem 1rem;
+    padding: 1.5rem 1.6rem;
   }
 
   .insights-head {
@@ -1097,13 +1098,13 @@
   }
 
   .insights-head h2 {
-    font-size: 1.05rem;
+    font-size: 1.3rem;
     margin: 0;
   }
 
   .insights-body {
-    margin: 0.75rem 0;
-    max-height: min(60vh, 28rem);
+    margin: 1.1rem 0;
+    max-height: min(72vh, 36rem);
     overflow: auto;
   }
 
@@ -1265,6 +1266,45 @@
   min-height: 20rem;
 }
 
+.sift-deck-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.sift-deck-loading-label {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--muted);
+  animation: sift-loading-pulse 1.2s ease-in-out infinite;
+}
+
+.sift-loader {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  border: 3px solid rgb(255 255 255 / 0.12);
+  border-top-color: var(--accent);
+  animation: sift-spin 0.7s linear infinite;
+}
+
+@keyframes sift-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sift-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .sift-swipe-card {
   position: relative;
   width: 100%;
@@ -1336,6 +1376,7 @@
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
+  margin-top: -0.4rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1354,6 +1395,9 @@
   border-radius: 18px;
   object-fit: cover;
   box-shadow: 0 18px 42px rgb(0 0 0 / 0.28);
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
 }
 
 .sift-cover-fallback {
@@ -1461,6 +1505,24 @@
   border-radius: inherit;
 }
 
+.insights-modal .sift-feature-stack {
+  gap: 0.85rem;
+  padding: 0;
+}
+
+.insights-modal .sift-feature {
+  grid-template-columns: 6.5rem minmax(0, 1fr) 2.4rem;
+  gap: 0.75rem;
+}
+
+.insights-modal .sift-feature-label {
+  font-size: 0.82rem;
+}
+
+.insights-modal .sift-feature-bar {
+  height: 0.5rem;
+}
+
 .sift-preview {
   display: flex;
   align-items: center;
@@ -1565,34 +1627,67 @@
   border-color: rgb(24 169 87 / 0.16);
 }
 
-.swipe-stamp {
+.sift-swipe-flash,
+.sift-swipe-tint {
   position: absolute;
-  top: 4rem;
-  z-index: 5;
-  padding: 0.32rem 0.85rem;
-  border-radius: 10px;
-  background: rgb(8 8 12 / 0.82);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  font-family: var(--font-display);
-  font-size: 1.6rem;
-  font-weight: 900;
-  line-height: 1;
+  inset: 0;
   pointer-events: none;
+  border-radius: 24px;
+  opacity: 0;
 }
 
-.swipe-stamp.keep {
-  left: 1.2rem;
-  border: 3px solid var(--yes);
-  color: var(--yes);
-  transform: rotate(-12deg);
+.sift-swipe-flash {
+  z-index: 60;
+  animation: sift-swipe-flash 0.42s ease-out forwards;
 }
 
-.swipe-stamp.skip {
-  right: 1.2rem;
-  border: 3px solid var(--no);
-  color: var(--no);
-  transform: rotate(12deg);
+.sift-swipe-tint {
+  z-index: 6;
+}
+
+.sift-swipe-flash.like,
+.sift-swipe-tint.like {
+  background: radial-gradient(circle at 50% 50%, rgb(24 169 87 / 0.42), rgb(24 169 87 / 0) 70%);
+  box-shadow: inset 0 0 0 3px rgb(24 169 87 / 0.55);
+}
+
+.sift-swipe-flash.pass,
+.sift-swipe-tint.pass {
+  background: radial-gradient(circle at 50% 50%, rgb(217 50 50 / 0.42), rgb(217 50 50 / 0) 70%);
+  box-shadow: inset 0 0 0 3px rgb(217 50 50 / 0.55);
+}
+
+.liked-card {
+  will-change: box-shadow, opacity;
+}
+
+.liked-card-removing {
+  animation: liked-card-remove 0.42s ease-out forwards;
+}
+
+@keyframes liked-card-remove {
+  0% {
+    box-shadow: 0 0 0 0 rgb(217 50 50 / 0);
+  }
+  45% {
+    box-shadow: 0 0 0 1px rgb(217 50 50 / 0.45), 0 0 14px rgb(217 50 50 / 0.28);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(217 50 50 / 0);
+    opacity: 0.45;
+  }
+}
+
+@keyframes sift-swipe-flash {
+  0% {
+    opacity: 0;
+  }
+  28% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 @media (max-width: 520px) {

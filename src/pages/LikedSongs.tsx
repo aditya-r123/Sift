@@ -266,6 +266,9 @@ export function LikedSongsPage() {
     setError(null);
     setRemoveMessage(null);
     setRemovingSongIds((current) => new Set(current).add(song.id));
+
+    await new Promise((resolve) => setTimeout(resolve, 420));
+
     setLikedSongs((current) => current.filter((candidate) => candidate.id !== song.id));
 
     try {
@@ -317,10 +320,6 @@ export function LikedSongsPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2 self-start sm:self-auto">
-            <div className="inline-flex items-center gap-2 text-teal-300 text-sm bg-[#14211f] border border-teal-500/20 rounded-full px-3 py-2">
-              <Heart className="w-4 h-4 fill-current" />
-              Swipe archive
-            </div>
             <button
               type="button"
               onClick={() => void createSpotifyPlaylist()}
