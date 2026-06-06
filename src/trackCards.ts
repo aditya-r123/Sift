@@ -186,6 +186,38 @@ export async function loadCardCoverMedia(trackIds: string[]): Promise<Map<string
   }
 }
 
+/**
+ * Load cover media in small, in-order chunks and hand each chunk back as it arrives, so the
+ * first (visible) cards paint their covers without waiting on the whole batch. Chunks are fetched
+ * one at a time (bounded external load), and `shouldContinue` lets the caller stop a stream that a
+ * newer batch has superseded — both before fetching the next chunk and before applying it.
+ */
+export async function streamCardCoverMedia(
+  trackIds: string[],
+  onChunk: (media: Map<string, CardMedia>) => void,
+  options: { chunkSize?: number; shouldContinue?: () => boolean } = {}
+): Promise<void> {
+  const { chunkSize = 6, shouldContinue } = options;
+  const stillActive = () => !shouldContinue || shouldContinue();
+
+  for (let i = 0; i < trackIds.length; i += chunkSize) {
+    if (!stillActive()) return;
+    const ids = trackIds.slice(i, i + chunkSize);
+    try {
+      const res = await fetch(`/api/tracks?ids=${encodeURIComponent(ids.join(','))}`);
+      if (!res.ok) continue;
+      const data = (await res.json()) as { tracks?: Array<CardMedia & { id?: string }> };
+      const media = new Map<string, CardMedia>();
+      for (const track of data.tracks ?? []) {
+        if (track.id) media.set(track.id, track);
+      }
+      if (media.size > 0 && stillActive()) onChunk(media);
+    } catch (error) {
+      console.warn('Failed to load track cover media chunk:', error);
+    }
+  }
+}
+
 export async function loadGeneratedSongs(limit = 100): Promise<Song[]> {
   const { data, error } = await supabase
     .from('top_tracks')
@@ -225,24 +257,25 @@ export async function loadSongsByIds(trackIds: string[]): Promise<Song[]> {
   const uniqueIds = [...new Set(trackIds)];
   if (uniqueIds.length === 0) return [];
 
-  const [tracksById, mediaById] = await Promise.all([
-    loadTopTracksByIds(uniqueIds),
-    loadCardCoverMedia(uniqueIds),
-  ]);
+  // Catalog rows only (fast); covers (cover_url or external lookup) are streamed in on the page so
+  // the list renders without waiting on media for every song.
+  const tracksById = await loadTopTracksByIds(uniqueIds);
 
   return uniqueIds.flatMap((trackId) => {
     const track = tracksById.get(trackId);
-    return track ? [trackToSong(track, mediaById.get(trackId))] : [];
+    return track ? [trackToSong(track)] : [];
   });
 }
 
 async function recommendationRowsToSongs(rows: RecommendationRow[]): Promise<Song[]> {
   const trackIds = rows.map((row) => row.spotify_track_id);
-  const [tracksById, mediaById] = await Promise.all([loadTopTracksByIds(trackIds), loadCardCoverMedia(trackIds)]);
+  // Only the catalog lookup blocks the batch; covers (cover_url or external lookup) fill in
+  // lazily on the page so the cards show as soon as the recommendation rows resolve.
+  const tracksById = await loadTopTracksByIds(trackIds);
 
   return rows.map((row, index) => {
     const track = tracksById.get(row.spotify_track_id) ?? recommendationRowToTrack(row, index);
-    return trackToSong(track, mediaById.get(row.spotify_track_id), recommendationTags(row));
+    return trackToSong(track, {}, recommendationTags(row));
   });
 }
 
