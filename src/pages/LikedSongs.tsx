@@ -4,7 +4,7 @@ import { LikedSongMiniCard, type LikedSong } from '../components/LikedSongMiniCa
 import { LikedSongsControls, type LikedSongsSortMode } from '../components/LikedSongsControls.js';
 import { supabase } from '../supabase.js';
 import type { Song } from '../types.js';
-import { loadCardCoverMedia, loadSongsByIds, type CardMedia } from '../trackCards.js';
+import { loadSongsByIds, streamCardCoverMedia, type CardMedia } from '../trackCards.js';
 
 type SwipeRow = {
   song_id: string;
@@ -66,21 +66,29 @@ export function LikedSongsPage() {
   const [playlistResult, setPlaylistResult] = useState<PlaylistCreateResult | null>(null);
   const [removingSongIds, setRemovingSongIds] = useState<Set<string>>(() => new Set());
   const [removeMessage, setRemoveMessage] = useState<string | null>(null);
-  const mediaRefreshKey = useRef('');
+  const [likedTotal, setLikedTotal] = useState<number | null>(null);
+  const loadIdRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load(userId: string | null) {
-      setLoading(true);
+      const myLoad = (loadIdRef.current += 1);
+      const isStale = () => cancelled || loadIdRef.current !== myLoad;
+
       setError(null);
+      setLikedSongs([]);
       if (!userId) {
-        setLikedSongs([]);
+        setLikedTotal(0);
         setLoading(false);
         return;
       }
 
+      setLoading(true);
+      setLikedTotal(null);
+
       try {
+        // 1) Count first, so the header total shows immediately.
         const swipes = await supabase
           .from('swipes')
           .select('song_id, swiped_at, source')
@@ -89,23 +97,57 @@ export function LikedSongsPage() {
           .order('swiped_at', { ascending: false });
 
         if (swipes.error) throw swipes.error;
+        if (isStale()) return;
 
         const rows = (swipes.data ?? []) as SwipeRow[];
+        setLikedTotal(rows.length);
+
+        if (rows.length === 0) {
+          setLikedSongs([]);
+          setLoading(false);
+          return;
+        }
+
+        // 2) Catalog rows (fast, DB only) — no blocking on cover art.
         const catalog = await loadSongsByIds(rows.map((row) => row.song_id));
+        if (isStale()) return;
+
         const songById = new Map(catalog.map((song) => [song.id, song]));
-        const next = rows.flatMap((row) => {
+        const ordered = rows.flatMap((row) => {
           const song = songById.get(row.song_id);
           return song ? [toLikedSong(song, row)] : [];
         });
 
-        if (!cancelled) setLikedSongs(next);
+        setLoading(false);
+
+        // 3) Reveal cards a few at a time so they show up progressively.
+        const REVEAL_CHUNK = 5;
+        for (let i = 0; i < ordered.length; i += REVEAL_CHUNK) {
+          if (isStale()) return;
+          setLikedSongs(ordered.slice(0, i + REVEAL_CHUNK));
+          await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+        }
+        if (isStale()) return;
+        setLikedSongs(ordered);
+
+        // 4) Fill in covers / previews for songs that still need them, a few at a time.
+        const missingIds = ordered.filter((song) => !song.coverImage).map((song) => song.id);
+        if (missingIds.length > 0) {
+          void streamCardCoverMedia(
+            missingIds,
+            (mediaById) => {
+              if (isStale()) return;
+              setLikedSongs((current) => current.map((song) => applyMedia(song, mediaById.get(song.id))));
+            },
+            { shouldContinue: () => !isStale() }
+          );
+        }
       } catch (e) {
-        if (!cancelled) {
+        if (!isStale()) {
           setError(errorMessage(e));
           setLikedSongs([]);
+          setLoading(false);
         }
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     }
 
@@ -127,30 +169,6 @@ export function LikedSongsPage() {
       sub.subscription.unsubscribe();
     };
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function refreshMissingMedia() {
-      const songsMissingMedia = likedSongs.filter((song) => !song.coverImage);
-      if (songsMissingMedia.length === 0) return;
-
-      const key = songsMissingMedia.map((song) => song.id).join(',');
-      if (key === mediaRefreshKey.current) return;
-
-      const mediaById = await loadCardCoverMedia(songsMissingMedia.map((song) => song.id));
-      if (cancelled || mediaById.size === 0) return;
-      mediaRefreshKey.current = key;
-
-      setLikedSongs((current) => current.map((song) => applyMedia(song, mediaById.get(song.id))));
-    }
-
-    void refreshMissingMedia();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [likedSongs]);
 
   const artists = useMemo(
     () => Array.from(new Set(likedSongs.map((song) => song.artist))).sort(compareText),
@@ -270,6 +288,7 @@ export function LikedSongsPage() {
     await new Promise((resolve) => setTimeout(resolve, 420));
 
     setLikedSongs((current) => current.filter((candidate) => candidate.id !== song.id));
+    setLikedTotal((total) => (total == null ? total : Math.max(0, total - 1)));
 
     try {
       const { error } = await supabase
@@ -283,6 +302,7 @@ export function LikedSongsPage() {
       setRemoveMessage(`${song.title} was removed from Liked Songs and can show up again in Discover or Explore.`);
     } catch (e) {
       setLikedSongs((current) => (current.some((candidate) => candidate.id === song.id) ? current : [song, ...current]));
+      setLikedTotal((total) => (total == null ? total : total + 1));
       setError(`Could not remove ${song.title}: ${errorMessage(e)}`);
     } finally {
       setRemovingSongIds((current) => {
@@ -309,6 +329,8 @@ export function LikedSongsPage() {
     );
   }
 
+  const savedCount = likedTotal ?? likedSongs.length;
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] px-6 py-8">
       <div className="max-w-4xl mx-auto">
@@ -316,7 +338,7 @@ export function LikedSongsPage() {
           <div>
             <h1 className="text-3xl font-bold text-white mb-2">Liked Songs</h1>
             <p className="text-gray-400">
-              {likedSongs.length === 1 ? '1 right-swipe saved' : `${likedSongs.length} right-swipes saved`}
+              {savedCount === 1 ? '1 right-swipe saved' : `${savedCount} right-swipes saved`}
             </p>
           </div>
           <div className="flex flex-wrap gap-2 self-start sm:self-auto">
@@ -409,9 +431,9 @@ export function LikedSongsPage() {
 
         {loading ? (
           <p className="text-gray-500 text-sm">Loading...</p>
-        ) : likedSongs.length === 0 ? (
+        ) : savedCount === 0 ? (
           <p className="text-gray-500 text-sm">No right-swipes yet. Like songs in Discover or Explore to build this list.</p>
-        ) : filteredSongs.length === 0 ? (
+        ) : filteredSongs.length === 0 && likedSongs.length > 0 ? (
           <p className="text-gray-500 text-sm">No liked songs match your filters.</p>
         ) : (
           <div className="overflow-y-scroll pr-2" style={{ maxHeight: '62vh', scrollbarGutter: 'stable' }}>

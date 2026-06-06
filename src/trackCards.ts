@@ -257,14 +257,13 @@ export async function loadSongsByIds(trackIds: string[]): Promise<Song[]> {
   const uniqueIds = [...new Set(trackIds)];
   if (uniqueIds.length === 0) return [];
 
-  const [tracksById, mediaById] = await Promise.all([
-    loadTopTracksByIds(uniqueIds),
-    loadCardCoverMedia(uniqueIds),
-  ]);
+  // Catalog rows only (fast); covers (cover_url or external lookup) are streamed in on the page so
+  // the list renders without waiting on media for every song.
+  const tracksById = await loadTopTracksByIds(uniqueIds);
 
   return uniqueIds.flatMap((trackId) => {
     const track = tracksById.get(trackId);
-    return track ? [trackToSong(track, mediaById.get(trackId))] : [];
+    return track ? [trackToSong(track)] : [];
   });
 }
 
