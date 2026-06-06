@@ -3,6 +3,7 @@ import { ExternalLink, Heart, ListPlus, RefreshCw, SlidersHorizontal } from 'luc
 import { LikedSongMiniCard, type LikedSong } from '../components/LikedSongMiniCard.js';
 import { LikedSongsControls, type LikedSongsSortMode } from '../components/LikedSongsControls.js';
 import { supabase } from '../supabase.js';
+import { onLikedChange } from '../likedEvents.js';
 import type { Song } from '../types.js';
 import { loadSongsByIds, streamCardCoverMedia, type CardMedia } from '../trackCards.js';
 
@@ -118,6 +119,8 @@ export function LikedSongsPage() {
           return song ? [toLikedSong(song, row)] : [];
         });
 
+        setLikedTotal(ordered.length);
+
         setLoading(false);
 
         // 3) Reveal cards a few at a time so they show up progressively.
@@ -168,6 +171,33 @@ export function LikedSongsPage() {
       cancelled = true;
       sub.subscription.unsubscribe();
     };
+  }, []);
+
+  // Mirror of the current liked song ids, so the real-time listener below can dedup without
+  // re-subscribing on every change.
+  const likedIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    likedIdsRef.current = new Set(likedSongs.map((song) => song.id));
+  }, [likedSongs]);
+
+  // Real-time updates: Discover/Explore emit a window event on each swipe, so a right-swipe shows up
+  // here immediately (count + mini-card) without waiting for a page refresh.
+  useEffect(() => {
+    return onLikedChange((change) => {
+      if (change.kind === 'added') {
+        if (likedIdsRef.current.has(change.song.id)) return;
+        likedIdsRef.current.add(change.song.id);
+        const liked: LikedSong = { ...change.song, swipedAt: change.swipedAt, source: change.source };
+        setLikedSongs((current) =>
+          current.some((song) => song.id === liked.id) ? current : [liked, ...current]
+        );
+        setLikedTotal((total) => (total == null ? total : total + 1));
+      } else {
+        if (!likedIdsRef.current.delete(change.songId)) return;
+        setLikedSongs((current) => current.filter((song) => song.id !== change.songId));
+        setLikedTotal((total) => (total == null ? total : Math.max(0, total - 1)));
+      }
+    });
   }, []);
 
   const artists = useMemo(
