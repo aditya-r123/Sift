@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { recordSwipeAndUpdateTaste, scoreSavedSwipe } from '../recommendations.js';
 import { supabase } from '../supabase.js';
+import { emitLikedChange } from '../likedEvents.js';
 import type { Song } from '../types.js';
 import {
   loadDiscoverRecommendationSongs,
@@ -203,6 +204,10 @@ export function DiscoverPage() {
 
       const userId = meId;
       if (userId) {
+        // Optimistically tell the Liked Songs tab so its count and mini-cards update in real time.
+        if (direction === 'right') {
+          emitLikedChange({ kind: 'added', song, source: 'DISCOVER', swipedAt: new Date().toISOString() });
+        }
         const { error } = await recordSwipeAndUpdateTaste(song.id, 'DISCOVER', direction);
         if (error) console.warn('Failed to record Discover swipe:', error.message);
       }
