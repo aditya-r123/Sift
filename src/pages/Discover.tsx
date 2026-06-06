@@ -51,7 +51,6 @@ export function DiscoverPage() {
     };
   }, []);
 
-  // ref so recordSwipe always sees the latest state without stale closures
   const stateRef = useRef({ seenIds, tagScores, batchSwipes, currentBatch, sourceSongs });
   stateRef.current = { seenIds, tagScores, batchSwipes, currentBatch, sourceSongs };
 
@@ -126,7 +125,6 @@ export function DiscoverPage() {
             startBatch(cards, seen, scores);
           }
         } catch {
-          // swipe history unavailable, just start fresh
           if (!cancelled) {
             setSourceSongs(cards);
             startBatch(cards, new Set(), {});
@@ -161,9 +159,6 @@ export function DiscoverPage() {
   }, [startBatch]);
 
   useEffect(() => {
-    // Only the on-screen batch needs covers; catalog songs get theirs once they become a batch.
-    // Keyed on the batch identity (a ref, not effect cleanup) so the progressive cover updates this
-    // stream applies don't cancel it — only a genuinely new batch supersedes it.
     const key = currentBatch.map((song) => song.id).join(',');
     if (key === mediaRefreshKey.current) return;
     mediaRefreshKey.current = key;

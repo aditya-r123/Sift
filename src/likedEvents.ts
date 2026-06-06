@@ -1,10 +1,4 @@
 import type { Song } from './types.js';
-
-/**
- * Cross-panel notification for liked-song changes. Discover/Explore and Liked Songs are separate
- * React roots in the same page, so a window event lets a right-swipe update the Liked Songs tab in
- * real time without a round trip.
- */
 export type LikedChange =
   | { kind: 'added'; song: Song; source: 'DISCOVER' | 'EXPLORE'; swipedAt: string }
   | { kind: 'removed'; songId: string };

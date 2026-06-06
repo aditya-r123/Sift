@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search, UserPlus, UserMinus, Check, X, Clock } from 'lucide-react';
 import { supabase } from '../supabase.js';
 
@@ -80,6 +80,7 @@ export function ProfilePage() {
 
   const [friendsFilter, setFriendsFilter] = useState('');
   const [pending, setPending] = useState<Record<string, boolean>>({});
+  const loadSeqRef = useRef(0);
 
   const incoming = useMemo(
     () => rows.filter((r) => r.addressee_id === meId && r.status === 'pending'),
@@ -97,8 +98,10 @@ export function ProfilePage() {
   const sentToIds = useMemo(() => new Set(sent.map((r) => r.addressee_id)), [sent]);
   const friendIds = useMemo(() => new Set(accepted.map((r) => r.profile.id)), [accepted]);
 
-  const loadRows = useCallback(async (userId: string) => {
-    setRowsLoading(true);
+  const loadRows = useCallback(async (userId: string, opts?: { silent?: boolean }) => {
+    const seq = (loadSeqRef.current += 1);
+    const isStale = () => loadSeqRef.current !== seq;
+    if (!opts?.silent) setRowsLoading(true);
     setRowsError(null);
     try {
       const { data: friendRows, error: friendsError } = await supabase
@@ -107,6 +110,7 @@ export function ProfilePage() {
         .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
         .order('created_at', { ascending: false });
       if (friendsError) throw friendsError;
+      if (isStale()) return;
 
       const baseRows = (friendRows ?? []) as Array<{
         id: string;
@@ -116,7 +120,7 @@ export function ProfilePage() {
       }>;
 
       if (baseRows.length === 0) {
-        setRows([]);
+        if (!isStale()) setRows([]);
         return;
       }
 
@@ -131,6 +135,7 @@ export function ProfilePage() {
         .select('id, display_name, avatar_url')
         .in('id', counterpartyIds);
       if (profilesError) throw profilesError;
+      if (isStale()) return;
 
       const profileById = new Map<string, Profile>(
         ((profileRows ?? []) as Profile[]).map((p) => [p.id, p])
@@ -151,11 +156,12 @@ export function ProfilePage() {
           profile,
         };
       });
+      if (isStale()) return;
       setRows(shaped);
     } catch (e) {
-      setRowsError(errorMessage(e));
+      if (!isStale()) setRowsError(errorMessage(e));
     } finally {
-      setRowsLoading(false);
+      if (!isStale() && !opts?.silent) setRowsLoading(false);
     }
   }, []);
 
@@ -182,6 +188,19 @@ export function ProfilePage() {
       sub.subscription.unsubscribe();
     };
   }, [loadRows]);
+
+  useEffect(() => {
+    if (!meId) return;
+    const channel = supabase
+      .channel(`friends-changes-${meId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'friends' }, () => {
+        void loadRows(meId, { silent: true });
+      })
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [meId, loadRows]);
 
   useEffect(() => {
     const query = searchQuery.trim();
