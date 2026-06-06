@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { recordSwipeAndUpdateTaste } from '../recommendations.js';
 import type { Song } from '../types.js';
 import {
-  loadCardCoverMedia,
   loadExploreRecommendationSongs,
   loadGeneratedSongs,
   mergeSongMedia,
+  streamCardCoverMedia,
 } from '../trackCards.js';
 import { supabase } from '../supabase.js';
 import { SwipeCard } from '../components/SwipeCard.js';
@@ -23,7 +23,15 @@ export function ExplorePage() {
   const [exitingCards, setExitingCards] = useState<ExitingCard[]>([]);
   const exitUidRef = useRef(0);
   const mediaRefreshKey = useRef('');
+  const mediaAliveRef = useRef(true);
   const loadedUserIdRef = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    mediaAliveRef.current = true;
+    return () => {
+      mediaAliveRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,27 +89,20 @@ export function ExplorePage() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    const key = songs.map((song) => song.id).join(',');
+    if (key === mediaRefreshKey.current) return;
+    mediaRefreshKey.current = key;
 
-    async function refreshMissingMedia() {
-      const songsMissingMedia = songs.filter((song) => !song.coverImage);
-      if (songsMissingMedia.length === 0) return;
+    const songsMissingMedia = songs.filter((song) => !song.coverImage);
+    if (songsMissingMedia.length === 0) return;
 
-      const key = songsMissingMedia.map((song) => song.id).join(',');
-      if (key === mediaRefreshKey.current) return;
-
-      const mediaById = await loadCardCoverMedia(songsMissingMedia.map((song) => song.id));
-      if (cancelled || mediaById.size === 0) return;
-      mediaRefreshKey.current = key;
-
-      setSongs((current) => current.map((song) => mergeSongMedia(song, mediaById.get(song.id))));
-    }
-
-    void refreshMissingMedia();
-
-    return () => {
-      cancelled = true;
-    };
+    void streamCardCoverMedia(
+      songsMissingMedia.map((song) => song.id),
+      (mediaById) => {
+        setSongs((current) => current.map((song) => mergeSongMedia(song, mediaById.get(song.id))));
+      },
+      { shouldContinue: () => mediaAliveRef.current && mediaRefreshKey.current === key }
+    );
   }, [songs]);
 
   const removeCard = async (direction: 'left' | 'right', fromX = 0) => {

@@ -3,10 +3,10 @@ import { recordSwipeAndUpdateTaste, scoreSavedSwipe } from '../recommendations.j
 import { supabase } from '../supabase.js';
 import type { Song } from '../types.js';
 import {
-  loadCardCoverMedia,
   loadDiscoverRecommendationSongs,
   loadGeneratedSongs,
   mergeSongMedia,
+  streamCardCoverMedia,
 } from '../trackCards.js';
 import { SwipeCard } from '../components/SwipeCard.js';
 import { DeckLoader } from '../components/DeckLoader.js';
@@ -40,7 +40,15 @@ export function DiscoverPage() {
   const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const mediaRefreshKey = useRef('');
+  const mediaAliveRef = useRef(true);
   const loadedUserIdRef = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    mediaAliveRef.current = true;
+    return () => {
+      mediaAliveRef.current = false;
+    };
+  }, []);
 
   // ref so recordSwipe always sees the latest state without stale closures
   const stateRef = useRef({ seenIds, tagScores, batchSwipes, currentBatch, sourceSongs });
@@ -152,32 +160,26 @@ export function DiscoverPage() {
   }, [startBatch]);
 
   useEffect(() => {
-    let cancelled = false;
+    // Only the on-screen batch needs covers; catalog songs get theirs once they become a batch.
+    // Keyed on the batch identity (a ref, not effect cleanup) so the progressive cover updates this
+    // stream applies don't cancel it — only a genuinely new batch supersedes it.
+    const key = currentBatch.map((song) => song.id).join(',');
+    if (key === mediaRefreshKey.current) return;
+    mediaRefreshKey.current = key;
 
-    async function refreshMissingMedia() {
-      const mediaSource = [...sourceSongs, ...currentBatch];
-      const songsMissingMedia = mediaSource.filter(
-        (song, index) => !song.coverImage && mediaSource.findIndex((candidate) => candidate.id === song.id) === index
-      );
-      if (songsMissingMedia.length === 0) return;
+    const songsMissingMedia = currentBatch.filter(
+      (song, index) => !song.coverImage && currentBatch.findIndex((candidate) => candidate.id === song.id) === index
+    );
+    if (songsMissingMedia.length === 0) return;
 
-      const key = songsMissingMedia.map((song) => song.id).join(',');
-      if (key === mediaRefreshKey.current) return;
-
-      const mediaById = await loadCardCoverMedia(songsMissingMedia.map((song) => song.id));
-      if (cancelled || mediaById.size === 0) return;
-      mediaRefreshKey.current = key;
-
-      setSourceSongs((current) => current.map((song) => mergeSongMedia(song, mediaById.get(song.id))));
-      setCurrentBatch((current) => current.map((song) => mergeSongMedia(song, mediaById.get(song.id))));
-    }
-
-    void refreshMissingMedia();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [sourceSongs, currentBatch]);
+    void streamCardCoverMedia(
+      songsMissingMedia.map((song) => song.id),
+      (mediaById) => {
+        setCurrentBatch((current) => current.map((song) => mergeSongMedia(song, mediaById.get(song.id))));
+      },
+      { shouldContinue: () => mediaAliveRef.current && mediaRefreshKey.current === key }
+    );
+  }, [currentBatch]);
 
   const recordSwipe = useCallback(
     async (song: Song, direction: 'left' | 'right') => {
