@@ -13,7 +13,7 @@ const FEATURE_ROWS = [
 ] as const;
 
 /** Color-code a tag by its category so genres, audio features, moods and recommendation sources read at a glance. */
-function tagStyle(tag: string): string {
+export function tagStyle(tag: string): string {
   const t = tag.toLowerCase();
   // Recommendation / source tags (where the card came from).
   if (
@@ -48,32 +48,57 @@ function featurePercent(value: number | null | undefined): number | null {
 
 /**
  * Shared card used by both the Discover and Explore feeds so the two pages stay identical:
- * draggable swipe, KEEP/SKIP stamps, feature bars, audio preview controls, and pass/like buttons.
+ * draggable swipe, green/red swipe tint, feature bars, audio preview controls, and pass/like buttons.
  */
 export function SwipeCard({
   song,
   index,
   isTop,
   onSwipe,
+  exitDirection = null,
+  initialX = 0,
+  onExitComplete,
 }: {
   song: Song;
   index: number;
   isTop: boolean;
-  onSwipe: (direction: 'left' | 'right') => void;
+  onSwipe: (direction: 'left' | 'right', fromX: number) => void;
+  exitDirection?: 'left' | 'right' | null;
+  initialX?: number;
+  onExitComplete?: () => void;
 }) {
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-260, 0, 260], [-18, 0, 18]);
   const opacity = useTransform(x, [-360, -220, 0, 220, 360], [0, 1, 1, 1, 0]);
-  const keepOpacity = useTransform(x, [36, 112], [0, 1]);
-  const skipOpacity = useTransform(x, [-112, -36], [1, 0]);
-  const keepScale = useTransform(x, [36, 112], [0.9, 1]);
-  const skipScale = useTransform(x, [-112, -36], [1, 0.9]);
+  const likeTint = useTransform(x, [24, 120], [0, 1]);
+  const passTint = useTransform(x, [-120, -24], [1, 0]);
   const activeAnimation = useRef<{ stop: () => void } | null>(null);
   const exitingRef = useRef(false);
   const [isExiting, setIsExiting] = useState(false);
+  const isExitClone = exitDirection !== null;
 
   useEffect(() => {
     return () => activeAnimation.current?.stop();
+  }, []);
+
+  useEffect(() => {
+    if (!isExitClone) return;
+    x.set(initialX);
+    const viewport = typeof window === 'undefined' ? 900 : window.innerWidth;
+    const target = exitDirection === 'right' ? viewport + 160 : -viewport - 160;
+    const controls = animate(x, target, {
+      duration: 0.42,
+      ease: [0.33, 0, 0.2, 1],
+    });
+    let cancelled = false;
+    void controls.then(() => {
+      if (!cancelled) onExitComplete?.();
+    });
+    return () => {
+      cancelled = true;
+      controls.stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const stopActiveAnimation = useCallback(() => {
@@ -98,24 +123,13 @@ export function SwipeCard({
     [stopActiveAnimation, x]
   );
 
-  const completeSwipe = useCallback(
-    async (direction: 'left' | 'right', velocity = 0) => {
+  const commitSwipe = useCallback(
+    (direction: 'left' | 'right') => {
       if (exitingRef.current) return;
       exitingRef.current = true;
       setIsExiting(true);
       stopActiveAnimation();
-      const viewport = typeof window === 'undefined' ? 900 : window.innerWidth;
-      const target = direction === 'right' ? viewport + 260 : -viewport - 260;
-      const controls = animate(x, target, {
-        type: 'spring',
-        stiffness: 220,
-        damping: 26,
-        mass: 0.85,
-        velocity,
-      });
-      activeAnimation.current = controls;
-      await controls;
-      onSwipe(direction);
+      onSwipe(direction, x.get());
     },
     [onSwipe, stopActiveAnimation, x]
   );
@@ -124,7 +138,7 @@ export function SwipeCard({
     if (isExiting) return;
     const projectedX = info.offset.x + info.velocity.x * 0.16;
     if (Math.abs(projectedX) > 112) {
-      void completeSwipe(projectedX > 0 ? 'right' : 'left', info.velocity.x);
+      commitSwipe(projectedX > 0 ? 'right' : 'left');
       return;
     }
     void springHome(info.velocity.x);
@@ -138,22 +152,22 @@ export function SwipeCard({
 
   return (
     <motion.div
-      drag={isTop ? 'x' : false}
+      drag={isTop && !isExitClone ? 'x' : false}
       dragConstraints={{ left: 0, right: 0 }}
       dragElastic={0.16}
       dragMomentum={false}
       style={{
-        x: isTop ? x : 0,
-        rotate: isTop ? rotate : 0,
-        opacity: isTop ? opacity : 1,
-        zIndex: 10 - index,
-        scale: 1 - index * 0.05,
+        x: isTop || isExitClone ? x : 0,
+        rotate: isTop || isExitClone ? rotate : 0,
+        opacity: isExitClone ? 1 : isTop ? opacity : 1,
+        zIndex: isExitClone ? 50 : 10 - index,
+        scale: isExitClone ? 1 : 1 - index * 0.05,
       }}
       onDragEnd={handleDragEnd}
       onDragStart={stopActiveAnimation}
       animate={{
-        scale: 1 - index * 0.05,
-        y: index * 10,
+        scale: isExitClone ? 1 : 1 - index * 0.05,
+        y: isExitClone ? 0 : index * 10,
       }}
       transition={{
         type: 'spring',
@@ -164,12 +178,13 @@ export function SwipeCard({
       className="sift-swipe-shell absolute inset-0 cursor-grab active:cursor-grabbing"
     >
       <div className="sift-swipe-card">
-        <motion.div className="swipe-stamp keep" style={{ opacity: keepOpacity, scale: keepScale }}>
-          KEEP
-        </motion.div>
-        <motion.div className="swipe-stamp skip" style={{ opacity: skipOpacity, scale: skipScale }}>
-          SKIP
-        </motion.div>
+        {isExitClone && <div className={`sift-swipe-flash ${exitDirection === 'right' ? 'like' : 'pass'}`} />}
+        {isTop && !isExitClone && (
+          <>
+            <motion.div className="sift-swipe-tint like" style={{ opacity: likeTint }} />
+            <motion.div className="sift-swipe-tint pass" style={{ opacity: passTint }} />
+          </>
+        )}
 
         <div className="sift-tag-strip">
           {song.tags.length > 0 && (
@@ -192,6 +207,8 @@ export function SwipeCard({
               src={song.coverImage}
               alt={`${song.title} cover`}
               className="sift-cover-image"
+              draggable={false}
+              onDragStart={(event) => event.preventDefault()}
             />
           ) : (
             <div
@@ -210,7 +227,7 @@ export function SwipeCard({
           {meta.length > 0 && <p className="sift-meta">{meta}</p>}
         </div>
 
-        {isTop && <AudioPreview song={song} />}
+        {isTop && !isExitClone && <AudioPreview song={song} />}
 
         {features.length > 0 && (
           <div className="sift-feature-stack" aria-label="Audio profile">
@@ -228,11 +245,11 @@ export function SwipeCard({
           </div>
         )}
 
-        {isTop && (
+        {isTop && !isExitClone && (
           <div className="sift-card-actions">
             <button
               type="button"
-              onClick={() => void completeSwipe('left')}
+              onClick={() => commitSwipe('left')}
               className="sift-action no"
               aria-label="Pass"
             >
@@ -240,7 +257,7 @@ export function SwipeCard({
             </button>
             <button
               type="button"
-              onClick={() => void completeSwipe('right')}
+              onClick={() => commitSwipe('right')}
               className="sift-action yes"
               aria-label="Like"
             >

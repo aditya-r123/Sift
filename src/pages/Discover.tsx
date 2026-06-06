@@ -9,8 +9,11 @@ import {
   mergeSongMedia,
 } from '../trackCards.js';
 import { SwipeCard } from '../components/SwipeCard.js';
+import { DeckLoader } from '../components/DeckLoader.js';
 
 const BATCH_SIZE = 15;
+
+type ExitingCard = { song: Song; direction: 'left' | 'right'; fromX: number; uid: number };
 
 function pickNextBatch(
   sourceSongs: Song[],
@@ -221,13 +224,17 @@ export function DiscoverPage() {
   );
 
   const [topIndex, setTopIndex] = useState(0);
+  const [exitingCards, setExitingCards] = useState<ExitingCard[]>([]);
+  const exitUidRef = useRef(0);
 
   useEffect(() => {
     setTopIndex(0);
   }, [currentBatch]);
 
   const handleSwipe = useCallback(
-    (song: Song, direction: 'left' | 'right') => {
+    (song: Song, direction: 'left' | 'right', fromX = 0) => {
+      const uid = (exitUidRef.current += 1);
+      setExitingCards((cards) => [...cards, { song, direction, fromX, uid }]);
       setTopIndex((i) => i + 1);
       void recordSwipe(song, direction);
     },
@@ -250,7 +257,7 @@ export function DiscoverPage() {
   if (loading) {
     return (
       <div className="sift-feed-page">
-        <p className="sift-empty">Loading…</p>
+        <DeckLoader />
       </div>
     );
   }
@@ -267,12 +274,8 @@ export function DiscoverPage() {
           </div>
         </div>
         <div className="sift-deck-frame">
-          {visibleCards.length === 0 ? (
-            <div className="sift-empty">
-              <p>
-                No Discover songs are available yet. Connect Spotify or seed Supabase top tracks to build this feed.
-              </p>
-            </div>
+          {visibleCards.length === 0 && exitingCards.length === 0 ? (
+            <DeckLoader />
           ) : (
             visibleCards.map((song, index) => (
               <SwipeCard
@@ -280,10 +283,22 @@ export function DiscoverPage() {
                 song={song}
                 index={index}
                 isTop={index === 0}
-                onSwipe={(direction) => handleSwipe(song, direction)}
+                onSwipe={(direction, fromX) => handleSwipe(song, direction, fromX)}
               />
             ))
           )}
+          {exitingCards.map((card) => (
+            <SwipeCard
+              key={`exit-${card.uid}`}
+              song={card.song}
+              index={0}
+              isTop={false}
+              exitDirection={card.direction}
+              initialX={card.fromX}
+              onExitComplete={() => setExitingCards((cards) => cards.filter((c) => c.uid !== card.uid))}
+              onSwipe={() => {}}
+            />
+          ))}
         </div>
       </div>
     </div>

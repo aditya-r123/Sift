@@ -155,31 +155,46 @@ function escapeHtml(s: string) {
     .replaceAll('"', "&quot;");
 }
 
-function formatScalar(v: unknown): string {
-  if (v === null || v === undefined) return "—";
-  if (typeof v === "number" && Number.isFinite(v))
-    return String(Math.abs(v) >= 1 || v === 0 ? Math.round(v * 1000) / 1000 : v);
-  return String(v);
+const INSIGHT_FEATURES = [
+  { key: "energy", label: "Energy", color: "var(--c-energy)" },
+  { key: "danceability", label: "Dance", color: "var(--c-dance)" },
+  { key: "valence", label: "Mood", color: "var(--c-valence)" },
+  { key: "acousticness", label: "Acoustic", color: "var(--c-acoustic)" },
+  { key: "speechiness", label: "Speech", color: "var(--c-speech)" },
+] as const;
+
+function readInsightFeature(body: unknown, key: string): number | null {
+  let obj = body;
+  if (Array.isArray(obj)) obj = obj[0];
+  if (obj && typeof obj === "object") {
+    const rec = obj as Record<string, unknown>;
+    const inner = (rec.data ?? rec.audio_features ?? rec.features) as unknown;
+    let v = rec[key];
+    if (v === undefined && inner && typeof inner === "object") v = (inner as Record<string, unknown>)[key];
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1) return v;
+  }
+  return null;
 }
 
-function renderObject(obj: unknown, depth = 0): string {
-  if (obj === null || obj === undefined) return `<span class="muted">—</span>`;
-  if (typeof obj === "boolean" || typeof obj === "string" || typeof obj === "number")
-    return `<span>${escapeHtml(formatScalar(obj))}</span>`;
-  if (Array.isArray(obj))
-    return obj.length === 0
-      ? `<span class="muted">[]</span>`
-      : `<ul class="nested">${obj.map((x) => `<li>${renderObject(x, depth + 1)}</li>`).join("")}</ul>`;
-  if (typeof obj !== "object") return `<span class="muted">—</span>`;
-  const entries = Object.entries(obj as Record<string, unknown>);
-  if (entries.length === 0) return `<span class="muted">{}</span>`;
-  return `<dl class="insight-dl">${entries
-    .map(
-      ([k, v]) => `
-      <dt>${escapeHtml(k)}</dt>
-      <dd>${renderObject(v, depth + 1)}</dd>`
-    )
-    .join("")}</dl>`;
+function renderTrackFeatures(body: unknown): string {
+  const rows = INSIGHT_FEATURES.map((feature) => ({
+    ...feature,
+    value: readInsightFeature(body, feature.key),
+  })).filter((feature) => feature.value !== null);
+
+  if (rows.length === 0) {
+    return `<p class="muted">No audio features available for this track.</p>`;
+  }
+
+  return `<div class="sift-feature-stack">${rows
+    .map((feature) => {
+      const percent = Math.round(Math.max(0, Math.min(1, feature.value as number)) * 100);
+      return `<div class="sift-feature">
+        <div class="sift-feature-label"><span>${escapeHtml(feature.label)}</span><span>${percent}</span></div>
+        <div class="sift-feature-bar"><span style="width:${percent}%;background:${feature.color}"></span></div>
+      </div>`;
+    })
+    .join("")}</div>`;
 }
 
 type SpotifyImage = { url?: string };
@@ -319,7 +334,7 @@ async function refreshRapidSubtitle() {
   const subtitle = qs("#insights-subtitle");
   if (!subtitle) return;
   subtitle.hidden = false;
-  subtitle.textContent = "RapidAPI extended audio features";
+  subtitle.textContent = "Audio profile";
 }
 
 type TrackInsightsPayload = {
@@ -357,13 +372,10 @@ async function openTrackInsights(trackId: string, title: string) {
       return;
     }
 
-    footEl.hidden = !payload.attemptedUrl;
-    footEl.innerHTML =
-      payload.attemptedUrl && payload.source === "rapidapi"
-        ? `<span class="muted small">Request: <code>${escapeHtml(payload.attemptedUrl)}</code></span>`
-        : "";
+    footEl.hidden = true;
+    footEl.innerHTML = "";
 
-    bodyEl.innerHTML = `<div class="insight-shell">${renderObject(payload.data ?? payload)}</div>`;
+    bodyEl.innerHTML = `<div class="insight-shell">${renderTrackFeatures(payload.data ?? payload)}</div>`;
   } catch (e) {
     bodyEl.innerHTML = `<p class="error-msg">${escapeHtml(String(e instanceof Error ? e.message : e))}</p>`;
   }

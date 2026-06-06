@@ -9,14 +9,19 @@ import {
 } from '../trackCards.js';
 import { supabase } from '../supabase.js';
 import { SwipeCard } from '../components/SwipeCard.js';
+import { DeckLoader } from '../components/DeckLoader.js';
 
 const BATCH_SIZE = 15;
+
+type ExitingCard = { song: Song; direction: 'left' | 'right'; fromX: number; uid: number };
 
 export function ExplorePage() {
   const [songs, setSongs] = useState<Song[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [meId, setMeId] = useState<string | null>(null);
+  const [exitingCards, setExitingCards] = useState<ExitingCard[]>([]);
+  const exitUidRef = useRef(0);
   const mediaRefreshKey = useRef('');
   const loadedUserIdRef = useRef<string | null | undefined>(undefined);
 
@@ -99,9 +104,11 @@ export function ExplorePage() {
     };
   }, [songs]);
 
-  const removeCard = async (direction: 'left' | 'right') => {
+  const removeCard = async (direction: 'left' | 'right', fromX = 0) => {
     if (currentIndex < songs.length) {
       const song = songs[currentIndex];
+      const uid = (exitUidRef.current += 1);
+      setExitingCards((cards) => [...cards, { song, direction, fromX, uid }]);
       const nextIndex = currentIndex + 1;
       setCurrentIndex(nextIndex);
 
@@ -150,8 +157,8 @@ export function ExplorePage() {
         </div>
         <div className="sift-deck-frame">
           {loading ? (
-            <div className="sift-empty"><p>Loading…</p></div>
-          ) : visibleCards.length === 0 ? (
+            <DeckLoader />
+          ) : visibleCards.length === 0 && exitingCards.length === 0 ? (
             <div className="sift-empty"><p>No more songs to explore!</p></div>
           ) : (
             visibleCards.map((song, index) => (
@@ -164,6 +171,18 @@ export function ExplorePage() {
               />
             ))
           )}
+          {exitingCards.map((card) => (
+            <SwipeCard
+              key={`exit-${card.uid}`}
+              song={card.song}
+              index={0}
+              isTop={false}
+              exitDirection={card.direction}
+              initialX={card.fromX}
+              onExitComplete={() => setExitingCards((cards) => cards.filter((c) => c.uid !== card.uid))}
+              onSwipe={() => {}}
+            />
+          ))}
         </div>
       </div>
     </div>
