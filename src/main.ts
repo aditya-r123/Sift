@@ -566,8 +566,6 @@ function accountUserFromSession(session: Session): AccountUser {
   return { displayName, email: session.user.email || "" };
 }
 
-// Set when the user has just returned from a successful Spotify OAuth connect,
-// so we seed the taste profile exactly once (not on every authenticated load).
 let pendingSpotifySeed = false;
 
 async function seedTasteProfileFromSpotify() {

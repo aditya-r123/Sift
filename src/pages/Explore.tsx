@@ -116,7 +116,6 @@ export function ExplorePage() {
 
       const userId = meId;
       if (userId) {
-        // Optimistically tell the Liked Songs tab so its count and mini-cards update in real time.
         if (direction === 'right') {
           emitLikedChange({ kind: 'added', song, source: 'EXPLORE', swipedAt: new Date().toISOString() });
         }
