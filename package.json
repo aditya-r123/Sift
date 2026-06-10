@@ -9,6 +9,9 @@
   "scripts": {
     "dev": "concurrently \"vite\" \"tsx watch server/index.ts\"",
     "build": "vite build",
+    "test": "VITE_SIFT_ALLOW_STUB_SUPABASE=1 playwright test",
+    "test:e2e": "playwright test tests/e2e",
+    "test:unit": "PLAYWRIGHT_SKIP_WEB_SERVER=1 VITE_SIFT_ALLOW_STUB_SUPABASE=1 playwright test tests/unit",
     "start": "tsx server/index.ts",
     "typecheck": "tsc --noEmit",
     "db:new": "supabase migration new",
