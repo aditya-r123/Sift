@@ -67,7 +67,7 @@ function formatArtistName(artist: string): string {
     .join(', ');
 }
 
-function tagsForTrack(track: TopTrackRow): string[] {
+export function tagsForTrack(track: TopTrackRow): string[] {
   const tags: string[] = [];
   if (track.rank <= 50) tags.push('Popular');
   if ((track.energy ?? 0) >= 0.7) tags.push('Energy');
