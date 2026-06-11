@@ -35,6 +35,8 @@ pnpm-debug.log*
 .eslintcache
 *.tsbuildinfo
 coverage/
+test-results/
+playwright-report/
 
 # Hosting and tooling
 .vercel/
